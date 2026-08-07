@@ -77,5 +77,8 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem('alfii_token');
   }
 
-  return { token, user, loading, initAnonymous, fetchMe, register, login, logout };
+  // setToken se expone porque los flujos de contrasena (restablecer y cambiar)
+  // reciben un token nuevo del backend y deben guardarlo igual que el login.
+  // Sin exportarlo, cada vista acababa duplicando el acceso a localStorage.
+  return { token, user, setToken, loading, initAnonymous, fetchMe, register, login, logout };
 });

@@ -1,12 +1,20 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
 import HomeView from '../views/HomeView.vue';
 
+/**
+ * `depth` define la jerarquia de navegacion para animar la transicion.
+ *
+ * Ir a mas profundo entra desde la derecha; volver, desde la izquierda. Sin este
+ * dato la animacion seria siempre igual y el usuario perderia la nocion de si
+ * esta avanzando o retrocediendo, que es justo lo que hace que una transicion
+ * ayude en vez de estorbar.
+ */
 const routes: Array<RouteRecordRaw> = [
   {
     path: '/',
     name: 'Home',
     component: HomeView,
-    meta: { title: 'alfii — Asesor privado' },
+    meta: { title: 'alfii — Asesor privado', depth: 0 },
   },
   // `immersive`: la vista ocupa la pantalla completa y trae su propia
   // navegacion. AppShell oculta la barra inferior y suelta el ancho maximo.
@@ -16,41 +24,67 @@ const routes: Array<RouteRecordRaw> = [
     path: '/analisis',
     name: 'FirstAnalysis',
     component: () => import('../views/FirstAnalysisView.vue'),
-    meta: { title: 'Tu primer análisis — alfii', immersive: true },
+    meta: { title: 'Tu primer análisis — alfii', immersive: true, depth: 1 },
   },
   {
     path: '/onboarding',
     name: 'Onboarding',
     component: () => import('../views/OnboardingView.vue'),
-    meta: { title: 'La Auditoría — alfii', immersive: true },
+    meta: { title: 'La Auditoría — alfii', immersive: true, depth: 1 },
   },
+  // `fullWidth`: la vista gestiona su propio ancho maximo. Sin esto AppShell la
+  // encierra en 600px y la rejilla de escritorio queda en una sola columna.
   {
     path: '/vault',
     name: 'Vault',
     component: () => import('../views/VaultView.vue'),
-    meta: { title: 'Bóveda — alfii' },
+    meta: { title: 'Bóveda — alfii', fullWidth: true, depth: 1 },
+  },
+  {
+    path: '/heroe',
+    name: 'Hero',
+    component: () => import('../views/HeroView.vue'),
+    meta: { title: 'Tu progreso — alfii', fullWidth: true, depth: 1 },
   },
   {
     path: '/chat/:id',
     name: 'TargetChat',
     component: () => import('../views/TargetChatView.vue'),
-    meta: { title: 'Expediente — alfii', immersive: true },
+    meta: { title: 'Expediente — alfii', immersive: true, depth: 2 },
   },
   {
     path: '/legal',
     name: 'Legal',
     component: () => import('../views/LegalView.vue'),
-    meta: { title: 'Aviso Legal, Términos y Privacidad — alfii' },
+    meta: { title: 'Aviso Legal, Términos y Privacidad — alfii', depth: 1 },
   },
   {
     path: '/settings',
     name: 'Settings',
     component: () => import('../views/SettingsView.vue'),
-    meta: { title: 'Ajustes — alfii' },
+    meta: { title: 'Ajustes — alfii', depth: 1 },
   },
   {
+    path: '/recuperar',
+    name: 'ForgotPassword',
+    component: () => import('../views/ForgotPasswordView.vue'),
+    meta: { title: 'Recuperar contraseña — alfii', depth: 1 },
+  },
+  {
+    // Destino de los enlaces del correo de recuperacion: {APP_URL}/nueva-contrasena?token=...
+    path: '/nueva-contrasena',
+    name: 'ResetPassword',
+    component: () => import('../views/ResetPasswordView.vue'),
+    meta: { title: 'Nueva contraseña — alfii', depth: 1 },
+  },
+  {
+    // Se muestra una 404 real en vez de redirigir al inicio: un redirect
+    // silencioso hace creer al usuario que el enlace funciono y esconde que
+    // algo esta roto, ademas de perder la URL que intento abrir.
     path: '/:pathMatch(.*)*',
-    redirect: '/',
+    name: 'NotFound',
+    component: () => import('../views/NotFoundView.vue'),
+    meta: { title: 'Pista perdida — alfii', immersive: true, depth: 1 },
   },
 ];
 

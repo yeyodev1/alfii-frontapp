@@ -1,20 +1,25 @@
 <script setup lang="ts">
 import BaseIcon from '@/components/shared/BaseIcon.vue';
 
+// `immersive` va aparte de `showNav`: hay vistas sin barra inferior que aun
+// necesitan scroll propio (/legal es un documento largo). Atarlas al mismo flag
+// dejaba esas vistas con overflow: hidden y sin forma de bajar.
 withDefaults(
   defineProps<{
     showNav?: boolean;
     fullWidth?: boolean;
+    immersive?: boolean;
   }>(),
   {
     showNav: true,
     fullWidth: false,
+    immersive: false,
   }
 );
 </script>
 
 <template>
-  <div class="app-shell" :class="{ 'is-full-width': fullWidth, 'is-immersive': !showNav }">
+  <div class="app-shell" :class="{ 'is-full-width': fullWidth, 'is-immersive': immersive }">
     <main class="shell-main">
       <slot />
     </main>
@@ -25,9 +30,11 @@ withDefaults(
           <BaseIcon name="vault" size="lg" />
           <span>Bóveda</span>
         </RouterLink>
-        <RouterLink to="/onboarding" class="nav-item" active-class="active">
+        <!-- Apunta al heroe y no al onboarding: el usuario quiere ver su
+             progreso, y desde ahi decide si completa lo que le falta. -->
+        <RouterLink to="/heroe" class="nav-item" active-class="active">
           <BaseIcon name="step.PERSONALITY" size="lg" />
-          <span>Perfil</span>
+          <span>Mi carta</span>
         </RouterLink>
         <RouterLink to="/settings" class="nav-item" active-class="active">
           <BaseIcon name="settings" size="lg" />

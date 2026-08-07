@@ -2,6 +2,7 @@
 import BaseSheet from '@/components/modals/BaseSheet.vue';
 import BaseIcon from '@/components/shared/BaseIcon.vue';
 import { ref } from 'vue';
+import { useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 
 const props = defineProps<{
@@ -14,12 +15,24 @@ const emit = defineEmits<{
 }>();
 
 const authStore = useAuthStore();
+const router = useRouter();
 const isLogin = ref(false);
 const email = ref('');
 const password = ref('');
 const confirm18 = ref(false);
 const errorMsg = ref('');
 const submitting = ref(false);
+
+/**
+ * La recuperacion vive en su propia ruta y no dentro de la hoja: el enlace del
+ * correo devuelve al usuario a una URL, y una hoja no es direccionable. Se
+ * cierra antes de navegar porque el ModalHost no reacciona al cambio de ruta y
+ * la hoja se quedaria flotando encima de la pantalla nueva.
+ */
+function goToForgotPassword() {
+  emit('close');
+  router.push('/recuperar');
+}
 
 async function handleSubmit() {
   errorMsg.value = '';
@@ -85,6 +98,11 @@ async function handleSubmit() {
             minlength="8"
             autocomplete="current-password"
           />
+          <div class="forgot-row">
+            <button type="button" class="forgot-link" @click="goToForgotPassword">
+              Olvidé mi contraseña
+            </button>
+          </div>
         </div>
 
         <div v-if="!isLogin" class="legal-checkbox">
@@ -175,6 +193,18 @@ async function handleSubmit() {
     &:focus {
       border-color: $alfii-red;
     }
+  }
+}
+
+.forgot-row {
+  @include row(0, center, flex-end);
+  padding-top: 2px;
+
+  .forgot-link {
+    font-size: $fs-2xs;
+    font-weight: $fw-semibold;
+    color: rgba($alfii-cream, 0.6);
+    text-decoration: underline;
   }
 }
 

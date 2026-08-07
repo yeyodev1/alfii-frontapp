@@ -4,6 +4,7 @@ import BaseIcon from '@/components/shared/BaseIcon.vue';
 import UnlockSheet from '@/components/modals/UnlockSheet.vue';
 import AuthSheet from '@/components/modals/AuthSheet.vue';
 import NameConfirmSheet from '@/components/modals/NameConfirmSheet.vue';
+import DuplicateTargetSheet from '@/components/modals/DuplicateTargetSheet.vue';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useFirstAnalysisStore, type FirstAnalysisScript } from '@/stores/firstAnalysis';
@@ -216,20 +217,47 @@ function askForName() {
   open('nameConfirm', NameConfirmSheet, {
     detectedName: store.detectedName,
     analysisId: store.analysisId,
-    onConfirm: async (displayName: string) => {
-      try {
-        const res: any = await api.post('/targets/confirm', {
-          analysisId: store.analysisId,
-          displayName,
-        });
-        if (res?.target?.id) store.setTargetId(res.target.id);
-        close();
-        showProfileInvite.value = true;
-      } catch {
-        // El interceptor ya avisa; dejamos la hoja abierta para reintentar.
-      }
-    },
+    onConfirm: (displayName: string) => confirmTarget(displayName),
   });
+}
+
+/**
+ * Crea el expediente. Si el backend detecta un nombre repetido responde 409 con
+ * el expediente que ya existe, y ahi decide el usuario: es la misma chica o es
+ * otra que se llama igual. Nunca se elige por el.
+ */
+async function confirmTarget(displayName: string, mode?: 'merge' | 'separate') {
+  try {
+    const res: any = await api.post('/targets/confirm', {
+      analysisId: store.analysisId,
+      displayName,
+      ...(mode ? { mode } : {}),
+    });
+    if (res?.target?.id) store.setTargetId(res.target.id);
+    close();
+    showProfileInvite.value = true;
+    if (mode === 'merge') {
+      toastStore.show(`Sumado al expediente de ${res.target.displayName}.`, 'success');
+    }
+  } catch (err: any) {
+    if (err?.details?.reason === 'duplicate_target' && err.details.existing) {
+      close();
+      open('duplicateTarget', DuplicateTargetSheet, {
+        name: displayName,
+        existing: err.details.existing,
+        onMerge: () => confirmTarget(displayName, 'merge'),
+        onSeparate: () => confirmTarget(displayName, 'separate'),
+        onClose: () => {
+          close();
+          // Sin expediente pero con el analisis ya hecho: se deja seguir para
+          // que no pierda lo que acaba de leer.
+          showProfileInvite.value = true;
+        },
+      });
+      return;
+    }
+    // El interceptor ya avisa; dejamos la hoja abierta para reintentar.
+  }
 }
 
 function goToOnboarding() {

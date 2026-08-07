@@ -2,6 +2,7 @@
 import BaseIcon from '@/components/shared/BaseIcon.vue';
 import ProfileCompletenessBadge from '@/components/shared/ProfileCompletenessBadge.vue';
 import ConfirmModal from '@/components/modals/ConfirmModal.vue';
+import ChangePasswordSheet from '@/components/modals/ChangePasswordSheet.vue';
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
@@ -15,6 +16,10 @@ const { open } = useModal();
 const toastStore = useToastStore();
 const completeness = ref({ score: 0, impact: '' });
 
+function openChangePassword() {
+  open('change-password', ChangePasswordSheet);
+}
+
 onMounted(async () => {
   try {
     const comp: any = await api.get('/profile/completeness');
@@ -26,6 +31,18 @@ onMounted(async () => {
 
 async function handleExport() {
   window.open(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8100/api'}/privacy/export`, '_blank');
+}
+
+function handleLogout() {
+  open('confirmLogout', ConfirmModal, {
+    title: '¿Cerrar sesión?',
+    message: 'Volverás a la pantalla de inicio. Tu historial sigue guardado y lo recuperas al entrar de nuevo.',
+    onConfirm: () => {
+      authStore.logout();
+      toastStore.show('Sesión cerrada.', 'success');
+      router.push('/');
+    },
+  });
 }
 
 async function handlePurge() {
@@ -69,6 +86,19 @@ async function handlePurge() {
           :impact="completeness.impact"
           @click="router.push('/onboarding')"
         />
+
+        <!-- Solo con cuenta: una sesion anonima no tiene contrasena que cambiar -->
+        <div v-if="authStore.user?.email" class="action-buttons">
+          <button class="action-btn" @click="openChangePassword">
+            <BaseIcon name="key" size="sm" color="cream" />
+            <span>Cambiar contraseña</span>
+          </button>
+
+          <button class="action-btn" @click="handleLogout">
+            <BaseIcon name="logout" size="sm" color="cream" />
+            <span>Cerrar sesión</span>
+          </button>
+        </div>
       </section>
 
       <!-- Privacidad y Derechos -->

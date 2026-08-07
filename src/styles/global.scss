@@ -100,3 +100,61 @@ a {
 ::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/**
+ * Transiciones entre vistas.
+ *
+ * Van aqui y no en App.vue porque el <style scoped> de un componente no alcanza
+ * a las clases que Vue inyecta en el hijo que entra y sale.
+ *
+ * El desplazamiento es corto (26px) y va acompanado de un cambio de escala
+ * minimo: lo justo para leer la direccion del movimiento. Un slide de pantalla
+ * completa se siente lento a la tercera vez que lo ves, y esta app se recorre
+ * muchas veces al dia.
+ */
+.nav-forward-enter-active,
+.nav-forward-leave-active,
+.nav-back-enter-active,
+.nav-back-leave-active {
+  transition:
+    opacity 0.26s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+    filter 0.26s ease-out;
+  will-change: opacity, transform;
+}
+
+.nav-forward-enter-from {
+  opacity: 0;
+  transform: translate3d(26px, 0, 0) scale(0.985);
+  filter: blur(3px);
+}
+
+.nav-forward-leave-to {
+  opacity: 0;
+  transform: translate3d(-18px, 0, 0) scale(0.99);
+  filter: blur(3px);
+}
+
+.nav-back-enter-from {
+  opacity: 0;
+  transform: translate3d(-26px, 0, 0) scale(0.985);
+  filter: blur(3px);
+}
+
+.nav-back-leave-to {
+  opacity: 0;
+  transform: translate3d(18px, 0, 0) scale(0.99);
+  filter: blur(3px);
+}
+
+// Quien pide menos movimiento recibe solo el fundido: la orientacion se pierde
+// un poco, pero para ese usuario el desplazamiento es el problema, no la ayuda.
+@media (prefers-reduced-motion: reduce) {
+  .nav-forward-enter-from,
+  .nav-forward-leave-to,
+  .nav-back-enter-from,
+  .nav-back-leave-to {
+    transform: none;
+    filter: none;
+  }
+}

@@ -65,6 +65,7 @@ export const ICON_MAP = {
   privacy: "fa-solid fa-user-shield",
   email: "fa-regular fa-envelope",
   key: "fa-solid fa-key",
+  logout: "fa-solid fa-right-from-bracket",
   info: "fa-solid fa-circle-info",
   lightbulb: "fa-solid fa-lightbulb",
   forward: "fa-solid fa-forward",
