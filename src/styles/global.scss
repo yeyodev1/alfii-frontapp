@@ -1,27 +1,102 @@
 @use './colorVariables.module.scss' as *;
 @use './fonts.module.scss' as *;
+@use './layout.module.scss' as *;
+@use './motion.module.scss' as *;
 
-html, body {
-  background-color: $white;
+* {
   margin: 0;
-  font-family: $font-principal;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
 }
 
 :root {
-  --bg: #{$white};
-  --text: #{$primary-dark};
-  --border: #{rgba($primary-dark, 0.08)};
-  --accent: #{$primary};
+  --bg: #{$alfii-navy};
+  --surface: #{$alfii-plum};
+  --text: #{$alfii-cream};
+  --text-muted: #{rgba($alfii-cream, 0.62)};
+  --accent: #{$alfii-red};
+  --safe: #{$alfii-sage};
+  --border: #{rgba($alfii-cream, 0.08)};
+  --border-strong: #{rgba($alfii-cream, 0.18)};
+  --overlay: #{rgba($alfii-navy, 0.78)};
 }
 
-[data-theme='dark'] {
-  --bg: #{$primary-dark};
-  --text: #{$text-light};
-  --border: #{rgba($white, 0.12)};
-  --accent: #{$primary};
-}
-
-body {
+html, body {
   background-color: var(--bg);
   color: var(--text);
+  font-family: $font-principal;
+  font-size: $fs-base;
+  line-height: $lh-base;
+  min-height: 100dvh;
+  width: 100%;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+button, input, textarea, select {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  outline: none;
+}
+
+button {
+  cursor: pointer;
+  
+  &:active {
+    transform: scale(0.97);
+  }
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+::selection {
+  background-color: rgba($alfii-red, 0.35);
+  color: $alfii-cream;
+}
+
+/**
+ * Barras de scroll.
+ *
+ * Por defecto Chrome pinta una barra clara y gruesa que sobre este fondo oscuro
+ * parece un error de maquetacion. Se estilan globales para no repetirlo en cada
+ * componente: fina, del color de la marca y sin flechas.
+ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba($alfii-cream, 0.22) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: rgba($alfii-cream, 0.18);
+  border-radius: 10px;
+
+  &:hover {
+    background-color: rgba($alfii-red, 0.55);
+  }
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }

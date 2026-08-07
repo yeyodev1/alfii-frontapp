@@ -1,19 +1,16 @@
-// Brand colors - customize per project
-$primary: #2094D2;
-$primary-dark: #010D27;
-$primary-light: #fefefe;
-$secondary: #2BBB92;
+// PALETA DE MARCA UNICA
+// Solo estos 5 colores. Prohibido un sexto hex. Variantes solo por opacidad.
+$alfii-red:   #d7022c;
+$alfii-navy:  #0d1321;
+$alfii-cream: #fbf0cc;
+$alfii-plum:  #2a1f2d;
+$alfii-sage:  #629678;
 
-$white: #fefefe;
-$text-light: #fefefe;
-$text-secondary: #6b7280;
-
-// Alert colors
-$alert-warning: #f59e0b;
-$alert-info: #3b82f6;
-$alert-success: #10b981;
-$alert-error: #ef4444;
-$alert-warning-bg: rgba($alert-warning, 0.1);
-$alert-info-bg: rgba($alert-info, 0.1);
-$alert-success-bg: rgba($alert-success, 0.1);
-$alert-error-bg: rgba($alert-error, 0.1);
+// Export para JS / SCSS
+:export {
+  red:   $alfii-red;
+  navy:  $alfii-navy;
+  cream: $alfii-cream;
+  plum:  $alfii-plum;
+  sage:  $alfii-sage;
+}
