@@ -3,12 +3,13 @@ import AlfiiLogo from '@/components/shared/AlfiiLogo.vue';
 import BaseIcon from '@/components/shared/BaseIcon.vue';
 import AnalysisCard from '@/components/shared/AnalysisCard.vue';
 import WingmanIntroSheet from '@/components/modals/WingmanIntroSheet.vue';
-import { ref, onMounted, onUnmounted, computed } from 'vue';
+import type { IconName } from '@/config/icons';
+import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import { useModal } from '@/composables/useModal';
 import { useAuthStore } from '@/stores/auth';
 import { useToastStore } from '@/stores/toast';
-import { useScrollReveal } from '@/composables/useScrollReveal';
+import { useGsapContext, gsap, ScrollTrigger, SplitText, revealBatch, MOTION_OK } from '@/composables/useGsap';
 import { useFirstAnalysisStore, type FirstAnalysisResponse } from '@/stores/firstAnalysis';
 import api from '@/services/http';
 
@@ -18,7 +19,19 @@ const authStore = useAuthStore();
 const toastStore = useToastStore();
 const firstAnalysisStore = useFirstAnalysisStore();
 
-useScrollReveal();
+/**
+ * Raiz de la pagina: alcance del gsap.context.
+ *
+ * Todo selector de las animaciones se resuelve DENTRO de este nodo. Sin el, un
+ * `.chip` del home tambien alcanzaria los chips de cualquier otra vista montada.
+ */
+const pageRef = ref<HTMLElement | null>(null);
+const hudBar = ref<HTMLElement | null>(null);
+
+/** Con movimiento reducido no hay coreografia: la pagina se lee quieta. */
+const motionOk =
+  typeof window !== 'undefined' &&
+  !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const fileInput = ref<HTMLInputElement | null>(null);
 const uploading = ref(false);
@@ -228,9 +241,135 @@ const liveCases = [
 
 const currentCase = computed(() => liveCases[activeCaseIndex.value] || liveCases[0]!);
 
+// ---------------------------------------------------------------------------
+// Agitacion: el dolor antes de la solucion.
+//
+// PORQUE va antes de explicar el producto: quien llega aqui no busca "una IA
+// que analiza chats", busca dejar de sentirse asi. Si la pagina no nombra su
+// situacion exacta primero, el resto se lee como una herramienta mas.
+// ---------------------------------------------------------------------------
+const painPoints: { icon: IconName; text: string }[] = [
+  { icon: 'subtext', text: 'Lees el mismo mensaje seis veces y sigues sin saber qué te quiso decir.' },
+  { icon: 'timing', text: 'Respondes en dos segundos y te arrepientes antes de que salga el mensaje.' },
+  { icon: 'thinking', text: 'Te deja en visto y no sabes si insistir o desaparecer.' },
+  { icon: 'risk', text: 'Notas que algo no cuadra, pero no sabes ponerle nombre.' },
+  { icon: 'scripts', text: 'Le preguntas a tu amigo, que improvisa exactamente igual que tú.' },
+  { icon: 'history', text: 'Reescribes el mismo mensaje cuatro veces y acabas mandando el más soso.' },
+];
+
+// Los 6 bloques como entregable, no como funcionalidad: el usuario no compra
+// "analisis de subtexto", compra saber que le estan probando.
+const deliverables: { icon: IconName; title: string; text: string }[] = [
+  {
+    icon: 'subtext',
+    title: 'Lo que de verdad te dijo',
+    text: 'La lectura entre líneas: qué te está probando y qué marco está montando.',
+  },
+  {
+    icon: 'archetype',
+    title: 'Con quién estás hablando',
+    text: 'Su arquetipo, con porcentaje de confianza y el razonamiento detrás.',
+  },
+  {
+    icon: 'risk',
+    title: 'Las red flags que no viste',
+    text: 'Señales de riesgo con su código, y la corrección si el que se está saliendo del marco eres tú.',
+  },
+  {
+    icon: 'timing',
+    title: 'Cuándo responder',
+    text: 'Los minutos exactos que conviene esperar, y por qué esa ventana y no otra.',
+  },
+  {
+    icon: 'scripts',
+    title: 'Qué escribirle, literal',
+    text: 'Tres versiones listas para pegar: Poder, Caballero y Pícaro. Cada una con su porqué.',
+  },
+  {
+    icon: 'meters',
+    title: 'Dónde estás realmente',
+    text: 'Medidores de avance hacia el primer beso, la primera cita y la primera noche.',
+  },
+];
+
+const comparison: { without: string; with: string }[] = [
+  { without: 'Interpretas según tu estado de ánimo', with: 'Lectura del subtexto, no de tus nervios' },
+  { without: 'Respondes cuando la ansiedad manda', with: 'Ventana de respuesta calculada' },
+  { without: 'El mismo mensaje para todas', with: 'Script calibrado a su arquetipo y a tu estilo' },
+  { without: 'Descubres la red flag tres meses tarde', with: 'Radar de riesgo desde la primera captura' },
+  { without: 'Consejo de un amigo que sabe lo mismo', with: 'Criterio consistente, sin sesgo de tu círculo' },
+];
+
+const faqs: { q: string; a: string }[] = [
+  {
+    q: '¿Esto no es manipular a alguien?',
+    a: 'No. Alfii no te da trucos para forzar nada: te traduce lo que ya está escrito y te ayuda a responder desde tu propio marco. De hecho la mitad del análisis es un radar que te avisa cuando la que no te conviene es ella, o cuando el que se está saliendo del marco eres tú.',
+  },
+  {
+    q: '¿Y si el análisis se equivoca?',
+    a: 'Puede. Por eso cada bloque viene con su razonamiento y su porcentaje de confianza, no como una sentencia. Tú lees el argumento y decides. Un análisis que no explica su lógica no sirve para aprender, y la idea es que a los diez chats ya no nos necesites tanto.',
+  },
+  {
+    q: '¿Quién puede ver mis capturas?',
+    a: 'Solo tú. Quedan dentro de tu expediente privado, sin dirección pública, y se abren con enlaces firmados que caducan. Si borras una, desaparece también del almacenamiento.',
+  },
+  {
+    q: '¿Tengo que crear una cuenta?',
+    a: 'Para la primera captura no. Subes, ves el análisis completo y decides después. La cuenta solo hace falta si quieres guardar expedientes y que Alfii recuerde el historial de cada conversación.',
+  },
+  {
+    q: '¿Funciona con Instagram, Tinder o Telegram?',
+    a: 'Sí. Alfii lee la captura, no la app. Mientras el texto se vea, da igual de dónde venga.',
+  },
+  {
+    q: '¿Para qué sirve la Auditoría inicial?',
+    a: 'Para que los scripts suenen a ti y no a un guion genérico. Alfii necesita saber a qué te dedicas, qué buscas y cuáles son tus líneas rojas antes de poner palabras en tu boca. Son ocho bloques y se puede saltar lo que no quieras contar.',
+  },
+];
+
+const openFaq = ref<number | null>(0);
+
+function toggleFaq(idx: number) {
+  openFaq.value = openFaq.value === idx ? null : idx;
+}
+
 function selectCase(idx: number) {
+  if (idx === activeCaseIndex.value) return;
   activeCaseIndex.value = idx;
   showFullAnalysis.value = false;
+  animateCaseSwap();
+}
+
+/**
+ * Relevo entre casos.
+ *
+ * Vue ya remonta las burbujas (van con :key por indice de caso), pero remontar
+ * no es animar: sin esto el chat entero parpadea y se cambia de golpe, que es
+ * justo lo que delata que es un mockup. Escalonadas se leen como una
+ * conversacion que llega.
+ */
+function animateCaseSwap() {
+  if (!motionOk) return;
+
+  void nextTick(() => {
+    const bubbles = document.querySelectorAll('.live-section .wa-bubble');
+    if (bubbles.length) {
+      gsap.fromTo(
+        bubbles,
+        { opacity: 0, y: 14 },
+        { opacity: 1, y: 0, duration: 0.42, stagger: 0.07, ease: 'power2.out', overwrite: true }
+      );
+    }
+
+    const verdict = document.querySelector('.live-section .verdict-card');
+    if (verdict) {
+      gsap.fromTo(
+        verdict,
+        { opacity: 0, x: 22 },
+        { opacity: 1, x: 0, duration: 0.5, ease: 'power3.out', overwrite: true }
+      );
+    }
+  });
 }
 
 function copyScript() {
@@ -304,10 +443,333 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('scroll', handleScroll);
 });
+
+// ---------------------------------------------------------------------------
+// Coreografia GSAP
+//
+// Todo lo decorativo vive dentro de matchMedia(MOTION_OK): quien pidio menos
+// movimiento en su sistema ve la pagina quieta y completa, no una pagina rota
+// con la mitad de las secciones invisibles esperando un scroll que nunca las
+// va a revelar.
+// ---------------------------------------------------------------------------
+useGsapContext(({ mm }) => {
+  // La barra HUD vive fuera del matchMedia: es informacion (cuanto llevas de
+  // pagina), no adorno. Con movimiento reducido sigue siendo util.
+  if (hudBar.value) {
+    gsap.to(hudBar.value, {
+      scaleX: 1,
+      ease: 'none',
+      scrollTrigger: { start: 0, end: 'max', scrub: 0.3 },
+    });
+  }
+
+  mm.add(MOTION_OK, () => {
+    // --- HERO: entra solo, sin esperar scroll ---
+    const title = document.querySelector('.hero-title');
+    let split: SplitText | null = null;
+
+    const tl = gsap.timeline({ defaults: { ease: 'power3.out' } });
+
+    if (title) {
+      // Por palabras y no por letras: el titular es la promesa de la pagina y
+      // letra a letra se lee como efecto, no como frase.
+      //
+      // Se parte tambien por lineas porque cada linea lleva overflow:hidden y
+      // hace de mascara: las palabras suben desde debajo del renglon en vez de
+      // aparecer flotando en mitad del hueco.
+      split = new SplitText(title, { type: 'lines,words', linesClass: 'split-line' });
+      tl.from(split.words, { yPercent: 115, duration: 0.85, stagger: 0.045 }, 0.1);
+    }
+
+    tl.from('.hero-badge', { y: -18, opacity: 0, duration: 0.6 }, 0)
+      .from('.hero-sub', { y: 22, opacity: 0, duration: 0.7 }, 0.45)
+      .from('.hero-chips li', { y: 16, opacity: 0, duration: 0.5, stagger: 0.05 }, 0.6)
+      .from('.dropzone', { y: 34, opacity: 0, scale: 0.97, duration: 0.8, ease: 'back.out(1.4)' }, 0.7)
+      .from('.trust-row li', { y: 12, opacity: 0, duration: 0.45, stagger: 0.07 }, 0.95);
+
+    // Los halos se mueven a distinta velocidad que el contenido: es lo que da
+    // profundidad sin meter una sola imagen de fondo.
+    gsap.to('.glow-top', {
+      yPercent: 34,
+      ease: 'none',
+      scrollTrigger: { trigger: '.hero', start: 'top top', end: 'bottom top', scrub: true },
+    });
+    gsap.to('.glow-bottom', {
+      yPercent: -26,
+      ease: 'none',
+      scrollTrigger: { trigger: '.hero', start: 'top top', end: 'bottom top', scrub: true },
+    });
+
+    // El dropzone respira: es el unico sitio donde se pide accion en el hero.
+    gsap.to('.dz-icon', {
+      y: -7,
+      duration: 2.1,
+      ease: 'sine.inOut',
+      repeat: -1,
+      yoyo: true,
+      delay: 1.6,
+    });
+
+    // --- CABECERAS DE SECCION ---
+    revealBatch('.section-head', { y: 30, stagger: 0.06 });
+
+    // --- AGITACION: entran alternando lado, como fichas que caen a su sitio ---
+    gsap.set('.pain-item', { opacity: 0, x: (i: number) => (i % 2 === 0 ? -34 : 34) });
+    ScrollTrigger.batch('.pain-item', {
+      start: 'top 90%',
+      once: true,
+      onEnter: (batch) =>
+        gsap.to(batch, { opacity: 1, x: 0, duration: 0.7, stagger: 0.08, ease: 'power3.out' }),
+    });
+
+    gsap.from('.pain-turn', {
+      opacity: 0,
+      y: 24,
+      duration: 0.8,
+      scrollTrigger: { trigger: '.pain-turn', start: 'top 90%', once: true },
+    });
+
+    // --- LO QUE RECIBES: las tarjetas entran girando en 3D ---
+    // (el recorrido por los casos se monta aparte, mas abajo)
+    gsap.set('.value-card', { opacity: 0, y: 46, rotateX: -14, transformPerspective: 900 });
+    ScrollTrigger.batch('.value-card', {
+      start: 'top 88%',
+      once: true,
+      onEnter: (batch) =>
+        gsap.to(batch, {
+          opacity: 1,
+          y: 0,
+          rotateX: 0,
+          duration: 0.8,
+          stagger: 0.09,
+          ease: 'power3.out',
+        }),
+    });
+
+    // --- PASOS: el numero cuenta hacia arriba, como un marcador ---
+    gsap.utils.toArray<HTMLElement>('.step').forEach((step, i) => {
+      const num = step.querySelector('.step-num');
+
+      gsap.from(step, {
+        opacity: 0,
+        y: 40,
+        duration: 0.7,
+        delay: i * 0.1,
+        ease: 'power3.out',
+        scrollTrigger: { trigger: step, start: 'top 88%', once: true },
+      });
+
+      if (num) {
+        const target = Number(num.textContent);
+        const counter = { v: 0 };
+        gsap.to(counter, {
+          v: target,
+          duration: 1.1,
+          delay: i * 0.1 + 0.2,
+          ease: 'power2.out',
+          onUpdate: () => {
+            num.textContent = String(Math.round(counter.v)).padStart(2, '0');
+          },
+          scrollTrigger: { trigger: step, start: 'top 88%', once: true },
+        });
+      }
+    });
+
+    // --- COMPARATIVA: las dos columnas se cierran hacia el centro ---
+    gsap.utils.toArray<HTMLElement>('.compare-row').forEach((row) => {
+      gsap.from(row.querySelectorAll('.cell-bad'), {
+        opacity: 0,
+        x: -30,
+        duration: 0.6,
+        ease: 'power3.out',
+        scrollTrigger: { trigger: row, start: 'top 92%', once: true },
+      });
+      gsap.from(row.querySelectorAll('.cell-good'), {
+        opacity: 0,
+        x: 30,
+        duration: 0.6,
+        ease: 'power3.out',
+        scrollTrigger: { trigger: row, start: 'top 92%', once: true },
+      });
+    });
+
+    // --- OBJECIONES Y CIERRE ---
+    revealBatch('.faq-item', { y: 26, stagger: 0.06, start: 'top 92%' });
+    revealBatch('.privacy-card', { y: 34 });
+
+    gsap.from('.final-card', {
+      opacity: 0,
+      scale: 0.95,
+      y: 40,
+      duration: 0.9,
+      ease: 'back.out(1.2)',
+      scrollTrigger: { trigger: '.final-card', start: 'top 88%', once: true },
+    });
+
+    return () => split?.revert();
+  });
+
+  // -------------------------------------------------------------------------
+  // .live-section: la seccion se clava y el scroll recorre los 3 casos
+  //
+  // PORQUE solo a partir de 1024px: clavar exige que el contenido quepa en la
+  // pantalla. En escritorio el movil y el veredicto van uno al lado del otro y
+  // caben; en un telefono van apilados y suman mas de 1100px, asi que el pin
+  // dejaria media seccion fuera de vista sin forma de llegar a ella.
+  //
+  // Debajo de 1024px no se clava nada: la seccion se recorre normal y el caso
+  // va cambiando segun por donde vaya el scroll, que da el mismo recorrido sin
+  // romper nada. Los chips siguen funcionando en los dos casos.
+  // -------------------------------------------------------------------------
+  const lastIndex = liveCases.length - 1;
+
+  /**
+   * Zonas muertas al principio y al final del recorrido clavado.
+   *
+   * PORQUE existen: sin ellas el snap tiene una parada en el progreso 0 y otra
+   * en el 1, o sea justo en los dos bordes del pin. Al entrar, cualquier
+   * movimiento pequeno lo devolvia al 0 de un tiron; al terminar el ultimo caso,
+   * el snap peleaba por mantenerlo en el 1 hasta que el scroll ganaba, y esa
+   * liberacion de golpe es lo que se sentia todavia mas brusco al salir.
+   *
+   * Con estos margenes, el primer y el ultimo tramo del pin no tienen parada:
+   * se entra y se sale deslizando. Y no son tiempo perdido, porque ahi es donde
+   * se scrubbean la entrada y la salida de la seccion.
+   */
+  const ENTER_PAD = 0.14;
+  const EXIT_PAD = 0.16;
+  const SPAN = 1 - ENTER_PAD - EXIT_PAD;
+
+  /** Progreso del trigger (0..1) → progreso util del recorrido de casos (0..1). */
+  const innerProgress = (p: number) => gsap.utils.clamp(0, 1, (p - ENTER_PAD) / SPAN);
+
+  /** Progreso util → indice del caso. */
+  const caseFromProgress = (p: number) => Math.round(innerProgress(p) * lastIndex);
+
+  /** Indice del caso → progreso real del trigger donde debe pararse. */
+  const stopAt = (i: number) => ENTER_PAD + (i / lastIndex) * SPAN;
+
+  mm.add(`(min-width: 1024px) and ${MOTION_OK}`, () => {
+    // Un solo timeline de duracion 1 atado al pin: asi las posiciones del
+    // timeline y el progreso del scroll son el mismo numero, y las zonas
+    // muertas se reservan escribiendo tramos con esa duracion exacta.
+    const tl = gsap.timeline({
+      defaults: { ease: 'none' },
+      scrollTrigger: {
+        trigger: '.live-section',
+        start: 'top top',
+        // Una pantalla por salto entre casos, mas el margen de las dos zonas.
+        end: () => `+=${window.innerHeight * (lastIndex + ENTER_PAD + EXIT_PAD)}`,
+        pin: true,
+        pinSpacing: true,
+        anticipatePin: 1,
+        // El scrub es lo que quita el corte al clavarse: el contenido sigue
+        // llegando a su sitio durante el primer tramo en vez de congelarse en
+        // el instante exacto en que la seccion toca el borde de la pantalla.
+        scrub: 0.6,
+        snap: {
+          snapTo: (value) => {
+            // Dentro de las zonas muertas se devuelve el valor tal cual: GSAP
+            // "anima" hacia donde ya estas, que es no moverse. Es la forma de
+            // desactivar el snap por tramos sin desactivarlo entero.
+            if (value <= ENTER_PAD || value >= 1 - EXIT_PAD) return value;
+            return stopAt(caseFromProgress(value));
+          },
+          // Mas lento y con mas espera que antes: a 40ms el snap saltaba encima
+          // del propio gesto del usuario y se percibia como que la pagina le
+          // arrancaba el scroll de las manos.
+          duration: { min: 0.35, max: 0.7 },
+          delay: 0.14,
+          ease: 'power2.inOut',
+          inertia: false,
+        },
+        onUpdate: (self) => selectCase(caseFromProgress(self.progress)),
+      },
+    });
+
+    tl.fromTo(
+      '.live-layout',
+      { scale: 0.94, y: 40, opacity: 0.5 },
+      { scale: 1, y: 0, opacity: 1, duration: ENTER_PAD }
+    )
+      // Tramo de los casos: no anima nada, solo reserva su sitio en el timeline.
+      // Lo que cambia aqui es el caso activo, y de eso se encarga onUpdate.
+      .to({}, { duration: SPAN })
+      // Y la seccion se despide antes de soltar el pin, para que la liberacion
+      // sea la continuacion de un movimiento y no un salto.
+      .to('.live-layout', { scale: 0.95, y: -34, opacity: 0.4, duration: EXIT_PAD });
+
+    return () => {
+      tl.scrollTrigger?.kill();
+      tl.kill();
+    };
+  });
+
+  mm.add(`(max-width: 1023px) and ${MOTION_OK}`, () => {
+    // Sin pin: el caso cambia segun por donde va el scroll de la seccion.
+    const st = ScrollTrigger.create({
+      trigger: '.live-section',
+      start: 'top 60%',
+      end: 'bottom 60%',
+      onUpdate: (self) => selectCase(caseFromProgress(self.progress)),
+    });
+
+    // La entrada del movil y del veredicto solo hace falta aqui. En escritorio
+    // la lleva el propio tramo de entrada del pin, y montarla dos veces dejaba
+    // dos animaciones distintas cruzandose sobre los mismos nodos.
+    const phone = gsap.fromTo(
+      '.phone',
+      { rotateX: 12, y: 44, opacity: 0 },
+      {
+        rotateX: 0,
+        y: 0,
+        opacity: 1,
+        duration: 1,
+        ease: 'power3.out',
+        scrollTrigger: { trigger: '.live-layout', start: 'top 82%', once: true },
+      }
+    );
+
+    const verdict = gsap.from('.verdict-card', {
+      opacity: 0,
+      y: 40,
+      duration: 0.9,
+      ease: 'power3.out',
+      scrollTrigger: { trigger: '.live-layout', start: 'top 78%', once: true },
+    });
+
+    return () => {
+      st.kill();
+      phone.scrollTrigger?.kill();
+      verdict.scrollTrigger?.kill();
+      phone.kill();
+      verdict.kill();
+    };
+  });
+}, pageRef);
+
+/**
+ * Abrir los 6 bloques cambia el alto de una seccion que puede estar clavada.
+ *
+ * Sin recalcular, ScrollTrigger sigue creyendo que la seccion mide lo de antes:
+ * el pin termina donde no toca y el contenido nuevo aparece cortado. refresh()
+ * en el frame siguiente, ya con el DOM pintado, lo recoloca.
+ */
+watch(showFullAnalysis, () => {
+  void nextTick(() => ScrollTrigger.refresh());
+});
 </script>
 
 <template>
-  <div class="home-page">
+  <div ref="pageRef" class="home-page">
+    <!--
+      HUD de progreso. Se llena con el scroll de toda la pagina: da la sensacion
+      de barra de carga de nivel y, de paso, dice cuanto queda por leer.
+    -->
+    <div class="hud-track">
+      <div ref="hudBar" class="hud-bar"></div>
+    </div>
+
     <input
       ref="fileInput"
       type="file"
@@ -339,24 +801,38 @@ onUnmounted(() => {
       <div class="glow glow-bottom"></div>
 
       <div class="hero-inner">
-        <div class="hero-badge animate-fade-in">
+        <div class="hero-badge">
           <span class="pulse-dot"></span>
           <span>Gratis la primera captura · sin registro</span>
         </div>
 
-        <h1 class="hero-title animate-reveal">
+        <h1 class="hero-title">
           Ella ya te dijo la verdad.
           <span class="shimmer-text">Tú no la leíste.</span>
         </h1>
 
-        <p class="hero-sub animate-reveal delay-1">
+        <p class="hero-sub">
           Sube una captura del chat. En 10 segundos Alfii te dice qué te está probando,
           qué arquetipo es, cuánto esperar para responder y exactamente qué escribirle.
         </p>
 
+        <!--
+          Los seis bloques dichos en el hero, antes de pedir nada.
+          Quien llega frio no sabe que significa "analisis": esto lo convierte en
+          seis cosas concretas que se entienden de un vistazo.
+        -->
+        <ul class="hero-chips">
+          <li>Subtexto</li>
+          <li>Arquetipo</li>
+          <li>Red flags</li>
+          <li>Timing exacto</li>
+          <li>3 scripts listos</li>
+          <li>Medidores</li>
+        </ul>
+
         <!-- Dropzone: el unico protagonista del hero -->
         <div
-          class="dropzone animate-reveal delay-2"
+          class="dropzone"
           :class="{ 'is-dragover': isDragOver, 'is-uploading': uploading }"
           @click="startExperience"
           @dragover.prevent="isDragOver = true"
@@ -381,7 +857,7 @@ onUnmounted(() => {
           </button>
         </div>
 
-        <ul class="trust-row animate-reveal delay-3">
+        <ul class="trust-row">
           <li><BaseIcon name="bolt" color="sage" size="xs" /><span>10 segundos</span></li>
           <li><BaseIcon name="privacy" color="sage" size="xs" /><span>Privado y solo tuyo</span></li>
           <li><BaseIcon name="check" color="sage" size="xs" /><span>Sin crear cuenta</span></li>
@@ -389,8 +865,34 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <!-- ================= 2. PRUEBA VIVA ================= -->
-    <section class="live-section reveal-on-scroll">
+    <!-- ================= 2. AGITACIÓN ================= -->
+    <section class="pain-section">
+      <div class="section-inner">
+        <div class="section-head">
+          <span class="eyebrow">
+            <BaseIcon name="thinking" color="red" size="xs" />
+            Si estás aquí, algo de esto te pasó esta semana
+          </span>
+          <h2>El problema no es que no sepas escribir</h2>
+          <p>Es que estás leyendo la conversación con la misma cabeza que la escribió.</p>
+        </div>
+
+        <ul class="pain-grid">
+          <li v-for="(p, i) in painPoints" :key="p.text" class="pain-item" :style="{ animationDelay: `${i * 60}ms` }">
+            <BaseIcon :name="p.icon" color="red" size="sm" />
+            <span>{{ p.text }}</span>
+          </li>
+        </ul>
+
+        <p class="pain-turn">
+          Ninguna de esas cosas se arregla escribiendo mejor.
+          <strong>Se arreglan leyendo bien.</strong>
+        </p>
+      </div>
+    </section>
+
+    <!-- ================= 3. PRUEBA VIVA ================= -->
+    <section class="live-section">
       <div class="section-inner">
         <div class="section-head">
           <span class="eyebrow">
@@ -399,6 +901,24 @@ onUnmounted(() => {
           </span>
           <h2>Elige la situación que estás viviendo ahora</h2>
           <p>Estos son análisis reales de Alfii. Toca uno y mira el veredicto completo.</p>
+        </div>
+
+        <!--
+          Contador de casos. Con la seccion clavada, el usuario necesita saber
+          que el scroll no se ha atascado: esto le dice que esta pasando por
+          tres cosas y en cual va.
+        -->
+        <div class="case-progress">
+          <span class="cp-dots">
+            <i
+              v-for="(_, idx) in liveCases"
+              :key="idx"
+              class="cp-dot"
+              :class="{ on: idx <= activeCaseIndex, current: idx === activeCaseIndex }"
+            ></i>
+          </span>
+          <span class="cp-label">Caso {{ activeCaseIndex + 1 }} de {{ liveCases.length }}</span>
+          <span class="cp-hint">Sigue bajando</span>
         </div>
 
         <!-- Selector de casos: chips scrollables en movil -->
@@ -503,8 +1023,36 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <!-- ================= 3. CÓMO FUNCIONA ================= -->
-    <section class="steps-section reveal-on-scroll">
+    <!-- ================= 4. LO QUE RECIBES ================= -->
+    <section class="value-section">
+      <div class="section-inner">
+        <div class="section-head">
+          <span class="eyebrow">
+            <BaseIcon name="listCheck" color="sage" size="xs" />
+            Seis bloques por captura
+          </span>
+          <h2>No es una opinión. Es un expediente</h2>
+          <p>Cada captura que subes devuelve esto, completo, en menos de lo que tardas en releer el chat.</p>
+        </div>
+
+        <div class="value-grid">
+          <article
+            v-for="(d, i) in deliverables"
+            :key="d.title"
+            class="value-card"
+            :style="{ animationDelay: `${i * 70}ms` }"
+          >
+            <span class="value-num">{{ String(i + 1).padStart(2, '0') }}</span>
+            <BaseIcon :name="d.icon" color="red" size="base" />
+            <h3>{{ d.title }}</h3>
+            <p>{{ d.text }}</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 5. CÓMO FUNCIONA ================= -->
+    <section class="steps-section">
       <div class="section-inner">
         <div class="section-head">
           <span class="eyebrow">
@@ -515,19 +1063,19 @@ onUnmounted(() => {
         </div>
 
         <div class="steps-row">
-          <article class="step reveal-on-scroll delay-1">
+          <article class="step step-item">
             <span class="step-num">01</span>
             <h3>Subes la captura</h3>
             <p>Alfii lee la conversación completa y la guarda en el expediente de esa chica, solo para ti.</p>
           </article>
 
-          <article class="step reveal-on-scroll delay-2">
+          <article class="step step-item">
             <span class="step-num">02</span>
             <h3>Recibes el diagnóstico</h3>
             <p>Subtexto, arquetipo, red flags y el tiempo exacto que debes esperar para responder.</p>
           </article>
 
-          <article class="step reveal-on-scroll delay-3">
+          <article class="step step-item">
             <span class="step-num">03</span>
             <h3>Copias tu respuesta</h3>
             <p>Tres scripts calibrados a tu personalidad: Poder, Caballero y Pícaro. Listos para pegar.</p>
@@ -536,8 +1084,70 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <!-- ================= 4. PRIVACIDAD + CTA ================= -->
-    <section class="close-section reveal-on-scroll">
+    <!-- ================= 6. COMPARATIVA ================= -->
+    <section class="compare-section">
+      <div class="section-inner">
+        <div class="section-head">
+          <span class="eyebrow">
+            <BaseIcon name="gavel" color="cream" size="xs" />
+            La misma conversación, dos resultados
+          </span>
+          <h2>Improvisando vs. con Alfii</h2>
+        </div>
+
+        <div class="compare-table">
+          <div class="compare-heads">
+            <span class="ch ch-bad">Como lo haces hoy</span>
+            <span class="ch ch-good">
+              <AlfiiLogo size="sm" mode="iso" />
+              Con Alfii
+            </span>
+          </div>
+
+          <div v-for="(row, i) in comparison" :key="row.with" class="compare-row" :style="{ animationDelay: `${i * 60}ms` }">
+            <div class="cell cell-bad">
+              <BaseIcon name="close" color="muted" size="xs" />
+              <span>{{ row.without }}</span>
+            </div>
+            <div class="cell cell-good">
+              <BaseIcon name="check" color="sage" size="xs" />
+              <span>{{ row.with }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 7. OBJECIONES ================= -->
+    <section class="faq-section">
+      <div class="section-inner">
+        <div class="section-head">
+          <span class="eyebrow">
+            <BaseIcon name="info" color="sage" size="xs" />
+            Lo que todo el mundo pregunta antes de subir la primera
+          </span>
+          <h2>Dudas razonables</h2>
+        </div>
+
+        <div class="faq-list">
+          <article
+            v-for="(f, i) in faqs"
+            :key="f.q"
+            class="faq-item"
+            :class="{ open: openFaq === i }"
+          >
+            <button class="faq-q" @click="toggleFaq(i)">
+              <span>{{ f.q }}</span>
+              <BaseIcon :name="openFaq === i ? 'close' : 'expand'" color="cream" size="xs" />
+            </button>
+            <p v-if="openFaq === i" class="faq-a">{{ f.a }}</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 8. PRIVACIDAD + CTA ================= -->
+    <section class="close-section">
       <div class="section-inner">
         <div class="privacy-card">
           <BaseIcon name="privacy" color="sage" size="xl" />
@@ -567,7 +1177,7 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <!-- ================= 5. FOOTER ================= -->
+    <!-- ================= 9. FOOTER ================= -->
     <footer class="footer">
       <div class="footer-inner">
         <AlfiiLogo size="sm" mode="full" />
@@ -614,6 +1224,42 @@ onUnmounted(() => {
 
 .hidden-input {
   display: none;
+}
+
+// ---------------------------------------------------------------------------
+// HUD de progreso
+//
+// Barra fija arriba del todo, por encima del navbar. scaleX va de 0 a 1 con el
+// scroll de la pagina; transform-origin a la izquierda para que crezca hacia la
+// derecha y no desde el centro.
+// ---------------------------------------------------------------------------
+.hud-track {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  z-index: 60;
+  background-color: rgba($alfii-cream, 0.06);
+  pointer-events: none;
+}
+
+.hud-bar {
+  height: 100%;
+  width: 100%;
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+  background: linear-gradient(90deg, $alfii-red 0%, #ff3b5c 60%, $alfii-sage 100%);
+  box-shadow: 0 0 12px rgba($alfii-red, 0.8);
+}
+
+// SplitText crea estas lineas en runtime, fuera del alcance del scoped CSS:
+// sin :deep() el selector nunca las alcanza y la mascara no existe.
+:deep(.split-line) {
+  overflow: hidden;
+  // Sin este respiro las tildes y las colas de la 'j' quedan cortadas por la
+  // propia mascara.
+  padding-bottom: 0.12em;
 }
 
 // ---------------------------------------------------------------------------
@@ -775,6 +1421,30 @@ onUnmounted(() => {
       font-size: $fs-lg;
     }
   }
+
+  // Los seis entregables como fichas. Ocupan una linea y convierten la promesa
+  // abstracta en algo contable antes de que el usuario suba nada.
+  .hero-chips {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 7px;
+    max-width: 620px;
+    // No hay reset global de listas en el proyecto: sin esto salen los puntos
+    // del <ul> flotando entre ficha y ficha.
+    list-style: none;
+
+    li {
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: $fs-2xs;
+      font-weight: $fw-bold;
+      letter-spacing: 0.02em;
+      color: rgba($alfii-cream, 0.85);
+      background-color: rgba($alfii-plum, 0.7);
+      border: 1px solid rgba($alfii-cream, 0.14);
+    }
+  }
 }
 
 // Dropzone protagonista
@@ -910,7 +1580,60 @@ onUnmounted(() => {
 }
 
 // ---------------------------------------------------------------------------
-// 2. Prueba viva
+// 2. Agitacion
+//
+// Fondo plano y sin tarjetas brillantes: es la seccion del problema, no la del
+// producto. Si aqui todo luce vendido, el usuario deja de leerse a si mismo.
+// ---------------------------------------------------------------------------
+.pain-section {
+  border-top: 1px solid rgba($alfii-cream, 0.06);
+}
+
+.pain-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  list-style: none;
+
+  .pain-item {
+    @include row(11px, flex-start);
+    flex: 1 1 100%;
+    padding: 14px 16px;
+    border-radius: 14px;
+    font-size: $fs-sm;
+    line-height: $lh-snug;
+    color: rgba($alfii-cream, 0.86);
+    background-color: rgba($alfii-plum, 0.42);
+    border: 1px solid rgba($alfii-cream, 0.07);
+    border-left: 2px solid rgba($alfii-red, 0.5);
+    // Entrada a cargo de GSAP (ver coreografia en el script).
+
+    @media (min-width: 768px) {
+      flex: 1 1 calc(50% - 5px);
+    }
+  }
+}
+
+// El giro: cierra el dolor y abre la solucion en una sola frase.
+.pain-turn {
+  text-align: center;
+  max-width: 560px;
+  margin: 0 auto;
+  font-size: $fs-md;
+  line-height: $lh-relaxed;
+  color: rgba($alfii-cream, 0.6);
+
+  strong {
+    display: block;
+    margin-top: 4px;
+    font-size: $fs-lg;
+    font-weight: $fw-extrabold;
+    color: $alfii-cream;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 3. Prueba viva
 // ---------------------------------------------------------------------------
 .live-section {
   background-color: rgba($alfii-plum, 0.28);
@@ -1058,7 +1781,7 @@ onUnmounted(() => {
     border-radius: 9px;
     font-size: 13px;
     line-height: 1.4;
-    animation: fadeInUp $dur-base $ease-out both;
+    // Entrada y relevo entre casos a cargo de GSAP.
 
     p { color: #e9edef; }
 
@@ -1210,12 +1933,124 @@ onUnmounted(() => {
   }
 }
 
+// Con la seccion clavada, un panel que crece sin tope empuja el pin fuera de
+// la pantalla. Acotado con scroll propio, el alto de la seccion apenas se
+// mueve y ScrollTrigger recalcula sobre algo estable.
 .full-analysis {
   width: 100%;
+
+  @media (min-width: 1024px) {
+    max-height: 42dvh;
+    @include scroll-y;
+  }
 }
 
 // ---------------------------------------------------------------------------
-// 3. Pasos
+// Contador de casos
+// ---------------------------------------------------------------------------
+.case-progress {
+  @include row(10px, center, center);
+  flex-wrap: wrap;
+
+  .cp-dots {
+    @include row(5px, center);
+  }
+
+  .cp-dot {
+    width: 22px;
+    height: 3px;
+    border-radius: 2px;
+    background-color: rgba($alfii-cream, 0.14);
+    transition: background-color $dur-base $ease-out, box-shadow $dur-base $ease-out;
+
+    &.on { background-color: rgba($alfii-red, 0.75); }
+
+    &.current {
+      background-color: $alfii-red;
+      box-shadow: 0 0 10px rgba($alfii-red, 0.7);
+    }
+  }
+
+  .cp-label {
+    font-size: $fs-2xs;
+    font-weight: $fw-extrabold;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: rgba($alfii-cream, 0.7);
+  }
+
+  // Solo donde la seccion se clava: en movil no hay nada que esperar, el
+  // scroll sigue su curso normal y la pista sobraria.
+  .cp-hint {
+    display: none;
+    font-size: $fs-2xs;
+    color: rgba($alfii-cream, 0.35);
+
+    @media (min-width: 1024px) {
+      display: inline;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 4. Lo que recibes
+//
+// Numeradas y con icono: el valor se cuenta, y contar seis cosas concretas pesa
+// mas que un parrafo diciendo "analisis completo".
+// ---------------------------------------------------------------------------
+.value-section {
+  background-color: rgba($alfii-plum, 0.2);
+  border-top: 1px solid rgba($alfii-cream, 0.08);
+  border-bottom: 1px solid rgba($alfii-cream, 0.08);
+}
+
+.value-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+
+  .value-card {
+    position: relative;
+    flex: 1 1 100%;
+    @include card-surface;
+    @include stack(7px);
+    // Entrada a cargo de GSAP (ver coreografia en el script).
+
+    @media (min-width: 768px) {
+      flex: 1 1 calc(50% - 6px);
+    }
+
+    @media (min-width: 1024px) {
+      flex: 1 1 calc(33.333% - 8px);
+    }
+
+    // Marca de agua, no etiqueta: ordena sin competir con el titulo.
+    .value-num {
+      position: absolute;
+      top: 12px;
+      right: 16px;
+      font-size: $fs-2xl;
+      font-weight: $fw-extrabold;
+      line-height: 1;
+      color: rgba($alfii-cream, 0.07);
+    }
+
+    h3 {
+      font-size: $fs-md;
+      font-weight: $fw-bold;
+      color: $alfii-cream;
+    }
+
+    p {
+      font-size: $fs-xs;
+      line-height: $lh-relaxed;
+      color: rgba($alfii-cream, 0.68);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 5. Pasos
 // ---------------------------------------------------------------------------
 .steps-row {
   display: flex;
@@ -1245,7 +2080,128 @@ onUnmounted(() => {
 }
 
 // ---------------------------------------------------------------------------
-// 4. Privacidad + cierre
+// 6. Comparativa
+//
+// Dos columnas de verdad, no una tabla de marketing: la izquierda describe lo
+// que el usuario hace hoy sin juzgarlo. Si la columna mala suena a caricatura,
+// nadie se reconoce en ella y la comparacion no vende nada.
+// ---------------------------------------------------------------------------
+.compare-table {
+  @include stack(8px);
+  max-width: 900px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.compare-heads {
+  @include row(8px, center);
+
+  .ch {
+    @include row(7px, center, center);
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 9px 10px;
+    border-radius: 11px;
+    font-size: $fs-2xs;
+    font-weight: $fw-extrabold;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-align: center;
+  }
+
+  .ch-bad {
+    color: rgba($alfii-cream, 0.45);
+    background-color: rgba($alfii-cream, 0.04);
+  }
+
+  .ch-good {
+    color: $alfii-cream;
+    background-color: rgba($alfii-red, 0.16);
+    border: 1px solid rgba($alfii-red, 0.4);
+  }
+}
+
+.compare-row {
+  @include row(8px, stretch);
+  // Entrada a cargo de GSAP: la CSS forzaba opacity 1 al cargar y anulaba el reveal.
+
+  .cell {
+    @include row(8px, flex-start);
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 12px 13px;
+    border-radius: 12px;
+    font-size: $fs-xs;
+    line-height: $lh-snug;
+  }
+
+  .cell-bad {
+    color: rgba($alfii-cream, 0.5);
+    background-color: rgba($alfii-cream, 0.03);
+    border: 1px solid rgba($alfii-cream, 0.06);
+  }
+
+  .cell-good {
+    color: $alfii-cream;
+    font-weight: $fw-semibold;
+    background-color: rgba($alfii-sage, 0.1);
+    border: 1px solid rgba($alfii-sage, 0.28);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 7. Objeciones
+//
+// Acordeon con la primera abierta: una lista cerrada del todo parece un pie de
+// pagina legal y nadie la toca. Abierta de entrada, se lee al menos una.
+// ---------------------------------------------------------------------------
+.faq-section {
+  background-color: rgba($alfii-plum, 0.2);
+  border-top: 1px solid rgba($alfii-cream, 0.08);
+}
+
+.faq-list {
+  @include stack(9px);
+  max-width: 760px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.faq-item {
+  border-radius: 14px;
+  overflow: hidden;
+  background-color: rgba($alfii-navy, 0.55);
+  border: 1px solid rgba($alfii-cream, 0.09);
+  transition: border-color $dur-fast $ease-out, background-color $dur-fast $ease-out;
+
+  &:hover { border-color: rgba($alfii-cream, 0.2); }
+
+  &.open {
+    border-color: rgba($alfii-red, 0.4);
+    background-color: rgba($alfii-plum, 0.55);
+  }
+
+  .faq-q {
+    @include row(12px, center, space-between);
+    width: 100%;
+    padding: 15px 17px;
+    text-align: left;
+    font-size: $fs-sm;
+    font-weight: $fw-bold;
+    color: $alfii-cream;
+  }
+
+  .faq-a {
+    padding: 0 17px 16px;
+    font-size: $fs-xs;
+    line-height: $lh-relaxed;
+    color: rgba($alfii-cream, 0.72);
+    animation: fadeInUp $dur-fast $ease-out both;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 8. Privacidad + cierre
 // ---------------------------------------------------------------------------
 .privacy-card {
   @include card-surface;
