@@ -196,14 +196,21 @@ async function sendTextMessage() {
           <img :src="msg.imageUrl" alt="Captura analizada" loading="lazy" />
         </div>
 
-        <!-- Analisis con tarjeta completa -->
+        <!-- Analisis: entra plegado, el usuario lo abre si quiere el detalle -->
         <div v-else-if="msg.kind === 'analysis'" class="analysis-msg">
-          <AnalysisCard :analysis="msg.analysisId?.payload || msg.analysis" />
+          <AnalysisCard :analysis="msg.analysisId?.payload || msg.analysis" collapsible />
         </div>
 
         <!-- Texto normal o saludo -->
         <div v-else class="text-bubble">
           <p>{{ msg.content }}</p>
+        </div>
+      </div>
+
+      <div v-if="sending" class="msg-row alfii">
+        <div class="text-bubble typing">
+          <BaseIcon name="thinking" size="sm" color="red" spin />
+          <span>Alfii está leyendo...</span>
         </div>
       </div>
     </div>
@@ -245,8 +252,10 @@ async function sendTextMessage() {
 
 .target-header {
   @include row(12px, center);
+  flex: 0 0 auto;
   padding: 12px clamp(16px, 4vw, 24px);
-  background-color: rgba($alfii-plum, 0.95);
+  background-color: rgba($alfii-plum, 0.9);
+  backdrop-filter: blur(16px);
   border-bottom: 1px solid rgba($alfii-cream, 0.08);
 
   .back-btn { padding: 6px; }
@@ -265,8 +274,11 @@ async function sendTextMessage() {
   }
 }
 
+// min-height: 0 para que el hilo scrollee dentro y no empuje la barra de input
+// fuera de pantalla cuando la conversacion crece.
 .chat-thread {
   flex: 1;
+  min-height: 0;
   @include scroll-y;
   padding: 16px clamp(16px, 4vw, 24px);
   @include stack(12px);
@@ -299,10 +311,18 @@ async function sendTextMessage() {
     border-radius: 16px;
     font-size: $fs-sm;
     line-height: $lh-relaxed;
+    animation: fadeInUp $dur-base $ease-out both;
+
+    &.typing {
+      @include row(8px, center);
+      font-size: $fs-xs;
+      color: rgba($alfii-cream, 0.6);
+    }
   }
 
   .analysis-msg {
     width: 100%;
+    animation: fadeInUp $dur-base $ease-out both;
   }
 
   // La captura se muestra acotada: es contexto del analisis, no la pieza
@@ -325,6 +345,7 @@ async function sendTextMessage() {
 
 .input-bar {
   @include row(8px, center);
+  flex: 0 0 auto;
   padding: 12px clamp(16px, 4vw, 24px);
   padding-bottom: max(12px, env(safe-area-inset-bottom));
   background-color: rgba($alfii-navy, 0.95);

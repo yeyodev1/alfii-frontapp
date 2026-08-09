@@ -2,14 +2,38 @@
 import BaseIcon from '@/components/shared/BaseIcon.vue';
 import MeterBar from '@/components/shared/MeterBar.vue';
 import RiskBadge from '@/components/shared/RiskBadge.vue';
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 
-const props = defineProps<{
-  analysis: any; // AnalysisPayload
-  interactive?: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    analysis: any; // AnalysisPayload
+    interactive?: boolean;
+    /**
+     * En el hilo del chat la tarjeta completa son seis bloques seguidos: ocupa
+     * pantallas enteras y entierra la conversacion. Con esto entra plegada como
+     * un resumen de una mirada y el usuario decide cuando abrirla.
+     */
+    collapsible?: boolean;
+  }>(),
+  { interactive: false, collapsible: false }
+);
 
 const copiedIndex = ref<number | null>(null);
+const expanded = ref(false);
+
+/** Plegada solo si se pidio plegable y el usuario no la ha abierto. */
+const showFull = computed(() => !props.collapsible || expanded.value);
+
+/** El primer script es el que el usuario copia el 90% de las veces. */
+const topScript = computed(() => props.analysis?.scripts?.[0] ?? null);
+
+const flagCount = computed(() => props.analysis?.riskRadar?.flags?.length ?? 0);
+
+const meterList = computed(() => [
+  { label: 'Beso', value: Number(props.analysis?.meters?.kiss ?? 0) },
+  { label: 'Cita', value: Number(props.analysis?.meters?.firstDate ?? 0) },
+  { label: 'Noche', value: Number(props.analysis?.meters?.firstNight ?? 0) },
+]);
 
 function copyScript(text: string, index: number) {
   navigator.clipboard.writeText(text);
@@ -21,11 +45,61 @@ function copyScript(text: string, index: number) {
 </script>
 
 <template>
-  <div class="analysis-card">
+  <div class="analysis-card" :class="{ 'is-digest': collapsible && !expanded }">
     <div class="lead-banner" v-if="analysis.lead">
       <p>{{ analysis.lead }}</p>
     </div>
 
+    <!--
+      Resumen plegado: lo minimo para decidir el siguiente movimiento sin abrir
+      nada. Arquetipo, riesgo, cuanto esperar y el script que se va a copiar.
+    -->
+    <div v-if="collapsible && !expanded" class="digest">
+      <div class="digest-pills">
+        <span class="pill pill-arq">
+          <BaseIcon name="archetype" color="cream" size="xs" />
+          {{ analysis.archetypeDiagnosis.primary }}
+        </span>
+        <RiskBadge :level="analysis.riskRadar.level" />
+        <span class="pill pill-wait">
+          <BaseIcon name="timing" color="sage" size="xs" />
+          {{ analysis.timing.waitMinutes }} min
+        </span>
+        <span v-if="flagCount" class="pill pill-flag">
+          <BaseIcon name="risk" color="red" size="xs" />
+          {{ flagCount }} red flag{{ flagCount > 1 ? 's' : '' }}
+        </span>
+      </div>
+
+      <div v-if="topScript" class="digest-script">
+        <div class="digest-script-head">
+          <span class="style-badge" :class="`style-${topScript.style.toLowerCase()}`">
+            {{ topScript.style }}
+          </span>
+          <button class="copy-btn" @click="copyScript(topScript.text, 0)">
+            <BaseIcon
+              :name="copiedIndex === 0 ? 'check' : 'copy'"
+              size="xs"
+              :color="copiedIndex === 0 ? 'sage' : 'muted'"
+            />
+            <span>{{ copiedIndex === 0 ? 'Copiado' : 'Copiar' }}</span>
+          </button>
+        </div>
+        <p class="script-text">"{{ topScript.text }}"</p>
+      </div>
+
+      <div class="digest-meters">
+        <div v-for="m in meterList" :key="m.label" class="mini-meter">
+          <span class="mini-label">{{ m.label }}</span>
+          <div class="mini-track">
+            <div class="mini-fill" :style="{ width: `${m.value}%` }"></div>
+          </div>
+          <span class="mini-val">{{ m.value }}</span>
+        </div>
+      </div>
+    </div>
+
+    <template v-if="showFull">
     <!-- Bloque 1: Subtexto -->
     <section class="block-section">
       <div class="block-header">
@@ -136,6 +210,12 @@ function copyScript(text: string, index: number) {
         <MeterBar label="Primera noche" :value="analysis.meters.firstNight" icon="firstNight" />
       </div>
     </section>
+    </template>
+
+    <button v-if="collapsible" class="toggle-full" @click="expanded = !expanded">
+      <span>{{ expanded ? 'Ver menos' : 'Ver análisis completo' }}</span>
+      <BaseIcon :name="expanded ? 'back' : 'expand'" size="xs" color="cream" />
+    </button>
   </div>
 </template>
 
@@ -143,6 +223,141 @@ function copyScript(text: string, index: number) {
 .analysis-card {
   @include stack(16px);
   width: 100%;
+
+  // Plegada respira menos: es una tarjeta del hilo, no una pantalla.
+  &.is-digest {
+    @include stack(10px);
+  }
+}
+
+// --- resumen plegado ---
+.digest {
+  @include stack(10px);
+  @include card-surface;
+  padding: 13px 14px;
+  animation: fadeInUp $dur-base $ease-out both;
+}
+
+.digest-pills {
+  @include row(6px, center, flex-start);
+  flex-wrap: wrap;
+
+  .pill {
+    @include row(5px, center);
+    padding: 5px 9px;
+    border-radius: 20px;
+    font-size: $fs-2xs;
+    font-weight: $fw-bold;
+    color: $alfii-cream;
+    background-color: rgba($alfii-navy, 0.55);
+    border: 1px solid rgba($alfii-cream, 0.1);
+
+    &.pill-wait { color: $alfii-sage; }
+    &.pill-flag {
+      background-color: rgba($alfii-red, 0.16);
+      border-color: rgba($alfii-red, 0.35);
+    }
+  }
+}
+
+.digest-script {
+  @include stack(7px);
+  padding: 11px 12px;
+  border-radius: 12px;
+  background-color: rgba($alfii-navy, 0.5);
+  border: 1px solid rgba($alfii-cream, 0.07);
+  border-left: 2px solid rgba($alfii-red, 0.55);
+
+  .digest-script-head {
+    @include row(8px, center, space-between);
+  }
+
+  .style-badge {
+    font-size: $fs-2xs;
+    font-weight: $fw-extrabold;
+    padding: 2px 8px;
+    border-radius: 4px;
+    text-transform: uppercase;
+
+    &.style-poder { background-color: rgba($alfii-red, 0.2); color: $alfii-cream; }
+    &.style-caballero { background-color: rgba($alfii-cream, 0.15); color: $alfii-cream; }
+    &.style-picaro { background-color: rgba($alfii-sage, 0.2); color: $alfii-sage; }
+  }
+
+  .copy-btn {
+    @include row(4px, center);
+    font-size: $fs-2xs;
+    color: rgba($alfii-cream, 0.6);
+    padding: 4px 8px;
+    border-radius: 6px;
+    transition: background-color $dur-fast $ease-out;
+
+    &:hover { background-color: rgba($alfii-cream, 0.08); }
+  }
+
+  .script-text {
+    font-size: $fs-sm;
+    font-weight: $fw-semibold;
+    line-height: $lh-snug;
+    color: $alfii-cream;
+  }
+}
+
+// Tres barras finas en fila: el progreso de un vistazo sin tres bloques.
+.digest-meters {
+  @include row(10px, center);
+
+  .mini-meter {
+    @include row(6px, center);
+    flex: 1;
+    min-width: 0;
+  }
+
+  .mini-label {
+    font-size: $fs-2xs;
+    color: rgba($alfii-cream, 0.5);
+    white-space: nowrap;
+  }
+
+  .mini-track {
+    flex: 1;
+    min-width: 18px;
+    height: 4px;
+    border-radius: 2px;
+    background-color: rgba($alfii-cream, 0.1);
+    overflow: hidden;
+  }
+
+  .mini-fill {
+    height: 100%;
+    border-radius: 2px;
+    background-color: $alfii-sage;
+    transition: width $dur-slow $ease-out;
+  }
+
+  .mini-val {
+    font-size: $fs-2xs;
+    font-weight: $fw-bold;
+    color: rgba($alfii-cream, 0.75);
+  }
+}
+
+.toggle-full {
+  @include row(7px, center, center);
+  align-self: center;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: $fs-2xs;
+  font-weight: $fw-bold;
+  color: $alfii-cream;
+  background-color: rgba($alfii-plum, 0.85);
+  border: 1px solid rgba($alfii-cream, 0.14);
+  transition: border-color $dur-fast $ease-out, background-color $dur-fast $ease-out;
+
+  &:hover {
+    border-color: rgba($alfii-red, 0.5);
+    background-color: rgba($alfii-plum, 1);
+  }
 }
 
 .lead-banner {
@@ -156,9 +371,16 @@ function copyScript(text: string, index: number) {
   line-height: $lh-relaxed;
 }
 
+// Al desplegar entran escalonados: seis bloques apareciendo de golpe se leen
+// como un salto, escalonados se leen como que algo se esta abriendo.
 .block-section {
   @include card-surface;
   @include stack(12px);
+  animation: fadeInUp $dur-base $ease-out both;
+
+  @for $i from 1 through 6 {
+    &:nth-of-type(#{$i}) { animation-delay: #{($i - 1) * 45}ms; }
+  }
 }
 
 .block-header {
