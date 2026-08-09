@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import SkipDataModal from '@/components/modals/SkipDataModal.vue';
 import LessonSheet from '@/components/modals/LessonSheet.vue';
+import CardSheet from '@/components/modals/CardSheet.vue';
+import MissionModal from '@/components/modals/MissionModal.vue';
 import AlfiiLogo from '@/components/shared/AlfiiLogo.vue';
 import BaseIcon from '@/components/shared/BaseIcon.vue';
 import PowerCard from '@/components/shared/PowerCard.vue';
 import BirthDatePicker from '@/components/shared/BirthDatePicker.vue';
 import type { IconName } from '@/config/icons';
-import { ref, onMounted, nextTick, computed } from 'vue';
+import { ref, onMounted, nextTick, computed, watch } from 'vue';
+import { gsap } from '@/composables/useGsap';
 import { useRouter } from 'vue-router';
 import { useModal } from '@/composables/useModal';
 import { useToastStore } from '@/stores/toast';
@@ -14,15 +17,19 @@ import { getMyCard, type PowerCardData } from '@/services/card.service';
 import api from '@/services/http';
 
 const router = useRouter();
-const { open } = useModal();
+const { open, close: closeModal } = useModal();
 const toastStore = useToastStore();
 
 const messages = ref<{ role: 'user' | 'alfii'; content: string }[]>([]);
 const currentStep = ref(0);
 const totalSteps = ref(8);
 const stepKey = ref('PREFERRED_NAME');
-const suggestedChips = ref<string[]>([]);
+// Solo chipOptions: el backend manda las mismas opciones en suggestedChips pero
+// sin su explicacion, y una opcion sin explicacion es una opcion que se elige a
+// ciegas. Aqui siempre se pinta la version con hint.
 const chipOptions = ref<{ label: string; hint: string }[]>([]);
+/** Lo que Alfii recuerda del usuario, atado a la pregunta de este turno. */
+const contextNote = ref('');
 const inputMessage = ref('');
 const sending = ref(false);
 const dateInput = ref('');
@@ -52,53 +59,78 @@ const needsDateInput = computed(() => stepKey.value === 'BIRTH_DATE');
  * mirando un campo de texto sin saber que escribir. Esto lo deja fijo encima del
  * input, junto con lo que gana por responder.
  */
-const STEP_META: Record<string, { title: string; ask: string; gain: string; icon: IconName }> = {
+type StepMeta = {
+  title: string;
+  ask: string;
+  gain: string;
+  statCode: string;
+  statName: string;
+  icon: IconName;
+};
+
+const STEP_META: Record<string, StepMeta> = {
   PREFERRED_NAME: {
     title: '¿Cómo te llamo?',
     ask: 'Tu nombre, o como te dicen tus amigos.',
     gain: 'Para hablarte a ti, no a un usuario',
+    statCode: 'ID',
+    statName: 'Identidad',
     icon: 'step.PREFERRED_NAME',
   },
   BIRTH_DATE: {
     title: '¿Cuándo naciste?',
     ask: 'Elige día, mes y año.',
     gain: 'Calibra el tono y las referencias',
+    statCode: 'ID',
+    statName: 'Identidad',
     icon: 'step.BIRTH_DATE',
   },
   STATUS: {
     title: '¿A qué te dedicas?',
     ask: 'Tu trabajo y qué tan bien te va del 1 al 5.',
     gain: 'Sube EST · Estatus',
+    statCode: 'EST',
+    statName: 'Estatus',
     icon: 'step.STATUS',
   },
   ASSETS: {
     title: '¿Qué juega a tu favor?',
     ask: 'Tus armas reales: físico, conversación, humor, ambición, lo que sea.',
     gain: 'Sube FIS · Físico',
+    statCode: 'FIS',
+    statName: 'Físico',
     icon: 'step.ASSETS',
   },
   PHILOSOPHY: {
     title: '¿Qué buscas y qué no negocias?',
     ask: 'Qué quieres de esto y cuáles son tus líneas rojas.',
     gain: 'Sube MRC · Marco',
+    statCode: 'MRC',
+    statName: 'Marco',
     icon: 'step.PHILOSOPHY',
   },
   PERSONALITY: {
     title: '¿Cómo eres cuando hablas?',
     ask: 'Directo, tranquilo, bromista... elige lo que más te suene.',
     gain: 'Define el estilo de tus scripts',
+    statCode: 'EST',
+    statName: 'Estilo',
     icon: 'step.PERSONALITY',
   },
   INCOME: {
     title: '¿En qué rango andan tus ingresos?',
     ask: 'Un rango aproximado al mes. Si prefieres no decirlo, sáltalo.',
     gain: 'Sube EST · Estatus',
+    statCode: 'EST',
+    statName: 'Estatus',
     icon: 'step.ASSETS',
   },
   PHYSIQUE: {
     title: '¿Altura y complexión?',
     ask: 'Estatura, peso si lo tienes a mano, y cómo te ves del 1 al 5. Opcional.',
     gain: 'Sube FIS · Físico',
+    statCode: 'FIS',
+    statName: 'Físico',
     icon: 'bolt',
   },
 };
@@ -107,13 +139,134 @@ const meta = computed(
   () => STEP_META[stepKey.value] ?? STEP_META.PREFERRED_NAME!
 );
 
-// En movil la carta ocupa demasiado si va siempre abierta: se muestra como una
-// tira compacta que el usuario despliega cuando quiere ver el detalle.
-const cardOpen = ref(false);
+/**
+ * Lo que Alfii acaba de preguntar, no lo que el bloque pregunta en general.
+ *
+ * PORQUE: el titulo del bloque es fijo ("¿Qué buscas y qué no negocias?") pero
+ * dentro del bloque hay varias sub-preguntas. Mostrar el texto estatico encima
+ * de unas opciones que responden a otra cosa era exactamente lo que descuadraba:
+ * el usuario leia una pregunta y tocaba la respuesta de la anterior.
+ */
+const currentAsk = computed(() => {
+  const lastAlfii = [...messages.value].reverse().find((m) => m.role === 'alfii');
+  return lastAlfii?.content.trim() || meta.value.ask;
+});
+
+/**
+ * El panel de mision: abierto por defecto siempre que haya opciones.
+ *
+ * PORQUE abierto y no detras de un boton: las opciones SON la pregunta. Si hay
+ * que descubrirlas, el usuario acaba escribiendo a mano lo que podia tocar, que
+ * es justo la friccion que el bloque intenta quitar. Se cierra al elegir, al
+ * saltar, o cuando el usuario decide escribirlo el mismo.
+ */
+const missionOpen = ref(false);
+const missionDismissed = ref(false);
+
+const hasMission = computed(
+  () => !completed.value && !needsDateInput.value && chipOptions.value.length > 0
+);
+
+const showMission = computed(() => hasMission.value && missionOpen.value && !sending.value);
+
+const textField = ref<HTMLTextAreaElement | null>(null);
+
+function writeInstead() {
+  missionOpen.value = false;
+  missionDismissed.value = true;
+  nextTick(() => textField.value?.focus());
+}
+
+function reopenMission() {
+  missionDismissed.value = false;
+  missionOpen.value = true;
+}
+
+function openCardSheet() {
+  if (!card.value) return;
+  open('cardSheet', CardSheet, { card: card.value });
+}
+
+/**
+ * Destello cuando la carta sube.
+ *
+ * La recompensa del bloque es ver moverse el numero. Si sube en silencio
+ * mientras el usuario mira el chat, el bloque se siente como un formulario.
+ */
+const statDelta = ref(0);
+const cardChip = ref<HTMLElement | null>(null);
+const progressFill = ref<HTMLElement | null>(null);
+
+/** Con movimiento reducido no hay coreografia: los valores cambian y ya. */
+const motionOk =
+  typeof window !== 'undefined' &&
+  !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function flashStatGain(before: number, after: number) {
+  if (after <= before) return;
+  statDelta.value = after - before;
+
+  if (motionOk) {
+    // Sacudida corta con rebote sobre el chip. Es el unico premio visible del
+    // bloque cerrado, y un numero que cambia sin moverse no se ve.
+    void nextTick(() => {
+      if (!cardChip.value) return;
+      gsap
+        .timeline()
+        .fromTo(
+          cardChip.value,
+          { scale: 1 },
+          { scale: 1.22, duration: 0.22, ease: 'back.out(3)' }
+        )
+        .to(cardChip.value, { scale: 1, duration: 0.5, ease: 'elastic.out(1, 0.45)' });
+
+      gsap.fromTo(
+        cardChip.value.querySelector('.gain-pop'),
+        { y: 10, scale: 0.6, opacity: 0 },
+        { y: -14, scale: 1, opacity: 1, duration: 0.45, ease: 'back.out(2)' }
+      );
+    });
+  }
+
+  setTimeout(() => {
+    statDelta.value = 0;
+  }, 2200);
+}
+
+/**
+ * La barra de progreso se tensa al avanzar de bloque.
+ *
+ * Con una `transition` de CSS el salto es lineal y pasa desapercibido justo en
+ * el momento que mas importa: el usuario acaba de contestar y quiere ver que
+ * avanzo. Con overshoot elastico el avance se nota aunque solo sean 12 puntos.
+ */
+watch(
+  progressPercent,
+  (to, from) => {
+    if (!progressFill.value) return;
+
+    if (!motionOk) {
+      gsap.set(progressFill.value, { width: `${to}%` });
+      return;
+    }
+
+    gsap.fromTo(
+      progressFill.value,
+      { width: `${from ?? 0}%` },
+      { width: `${to}%`, duration: 0.9, ease: 'elastic.out(1, 0.75)' }
+    );
+  },
+  // immediate para pintar el progreso inicial: al retomar la Auditoria el
+  // usuario entra en el bloque 5 y la barra debe estar donde le toca, no a cero
+  // esperando a que conteste algo.
+  { immediate: true, flush: 'post' }
+);
 
 async function refreshCard() {
+  const before = card.value?.overall ?? 0;
   try {
     card.value = await getMyCard();
+    flashStatGain(before, card.value?.overall ?? 0);
   } catch {
     // La carta es un extra motivacional: si falla, el onboarding sigue. Nunca
     // debe bloquear el flujo por un adorno.
@@ -148,8 +301,9 @@ onMounted(async () => {
     currentStep.value = res.step;
     totalSteps.value = res.totalSteps;
     stepKey.value = res.stepKey;
-    suggestedChips.value = res.suggestedChips || [];
     chipOptions.value = res.chipOptions || [];
+    contextNote.value = res.contextNote || '';
+    missionOpen.value = chipOptions.value.length > 0;
     scrollToBottom();
   } catch (err: any) {
     toastStore.show(err.message || 'Error al iniciar la auditoría', 'error');
@@ -175,10 +329,16 @@ async function sendTurn(payload: { message?: string; chipSelection?: string[]; b
     currentStep.value = res.step;
     totalSteps.value = res.totalSteps;
     stepKey.value = res.stepKey;
-    suggestedChips.value = res.suggestedChips || [];
     chipOptions.value = res.chipOptions || [];
+    contextNote.value = res.contextNote || '';
     inputMessage.value = '';
     dateInput.value = '';
+
+    // Turno nuevo, pregunta nueva: el panel vuelve a abrirse aunque el usuario
+    // lo hubiera cerrado en el turno anterior para escribir a mano. Lo que
+    // cerro era la pregunta de antes, no esta.
+    missionDismissed.value = false;
+    missionOpen.value = chipOptions.value.length > 0;
 
     if (res.microLessonId) {
       open('lesson', LessonSheet, { lessonId: res.microLessonId });
@@ -202,10 +362,19 @@ async function sendTurn(payload: { message?: string; chipSelection?: string[]; b
 
 function handleSkip() {
   const currentField = getCurrentFieldName();
+  // El panel se aparta mientras se confirma la omision: dos capas apiladas
+  // dejaban el dialogo de "¿seguro?" encima de las opciones que rechaza.
+  missionOpen.value = false;
   open('skipModal', SkipDataModal, {
     fieldName: currentField,
     onConfirmSkip: () => {
+      // Confirmar no emite 'close', asi que sin este cierre explicito el
+      // dialogo se quedaba abierto encima de la respuesta de Alfii.
+      closeModal();
       sendTurn({ skip: currentField });
+    },
+    onClose: () => {
+      if (!missionDismissed.value) missionOpen.value = hasMission.value;
     },
   });
 }
@@ -231,6 +400,7 @@ function sendMessage() {
 }
 
 function sendChip(chip: string) {
+  missionOpen.value = false;
   sendTurn({ chipSelection: [chip] });
 }
 
@@ -247,30 +417,33 @@ function sendDate() {
       <AlfiiLogo size="sm" mode="full" />
       <div class="progress-wrap">
         <div class="progress-track">
-          <div class="progress-fill" :style="{ width: `${progressPercent}%` }"></div>
+          <!--
+            El width lo escribe GSAP, no un binding: con los dos a la vez Vue
+            repinta el valor final en cuanto cambia el paso y se come la
+            animacion. Con movimiento reducido, el watch lo fija de golpe.
+          -->
+          <div ref="progressFill" class="progress-fill"></div>
         </div>
         <span class="progress-label">Bloque {{ currentStep + 1 }} de {{ totalSteps }}</span>
       </div>
+
+      <!-- La carta cabe en un chip: tres datos aqui, el detalle en su hoja -->
+      <button
+        v-if="card"
+        ref="cardChip"
+        class="card-chip"
+        :class="{ gained: statDelta > 0 }"
+        @click="openCardSheet"
+      >
+        <span class="chip-rating">{{ card.overall }}</span>
+        <span class="chip-pct">{{ card.completeness }}%</span>
+        <span v-if="statDelta > 0" class="gain-pop">+{{ statDelta }}</span>
+      </button>
     </header>
 
     <div class="audit-body">
       <!-- Columna principal: conversacion y respuesta -->
       <div class="audit-main">
-        <!-- Tira de la carta en movil: compacta y desplegable -->
-        <div v-if="card" class="card-strip">
-          <button class="strip-toggle" @click="cardOpen = !cardOpen">
-            <span class="strip-rating">{{ card.overall }}</span>
-            <span class="strip-txt">
-              <strong>Tu carta</strong>
-              <em>{{ card.tier }} · {{ card.completeness }}% completa</em>
-            </span>
-            <BaseIcon :name="cardOpen ? 'close' : 'expand'" size="xs" color="cream" />
-          </button>
-          <div v-if="cardOpen" class="strip-body">
-            <PowerCard :card="card" :compact="true" />
-          </div>
-        </div>
-
         <div ref="chatContainer" class="audit-thread">
           <div v-for="(msg, idx) in messages" :key="idx" class="msg-row" :class="msg.role">
             <div class="bubble">
@@ -297,13 +470,23 @@ function sendDate() {
 
         <!-- Zona de respuesta: primero QUE se pide, despues como responder -->
         <footer v-if="!completed" class="audit-input">
+          <!--
+            Una sola linea. La pregunta larga ya esta en la burbuja de Alfii
+            justo encima: repetirla completa aqui costaba 100px de conversacion.
+          -->
+          <!--
+            Los bloques de texto libre (estatus, activos) no abren panel, asi que
+            sin esto la memoria de Alfii solo se veria en la mitad de los pasos.
+          -->
+          <p v-if="contextNote && !showMission" class="recall-line">
+            <BaseIcon name="thinking" size="xs" color="sage" />
+            <span>{{ contextNote }}</span>
+          </p>
+
           <div class="step-brief">
-            <div class="brief-head">
-              <BaseIcon :name="meta.icon" size="sm" color="red" />
-              <h3>{{ meta.title }}</h3>
-              <span class="brief-gain">{{ meta.gain }}</span>
-            </div>
-            <p class="brief-ask">{{ meta.ask }}</p>
+            <BaseIcon :name="meta.icon" size="xs" color="red" />
+            <h3>{{ meta.title }}</h3>
+            <span class="brief-gain">{{ meta.gain }}</span>
           </div>
 
           <!-- Fecha de nacimiento: selector propio, nunca el nativo -->
@@ -314,35 +497,23 @@ function sendDate() {
           />
 
           <template v-else>
-            <!-- Con explicacion cuando el backend la manda: elegir "Estratega
-                 silencioso" sin saber que implica es elegir a ciegas. -->
-            <div v-if="chipOptions.length" class="options-row">
-              <button
-                v-for="opt in chipOptions"
-                :key="opt.label"
-                class="option-card"
-                :disabled="sending"
-                @click="sendChip(opt.label)"
-              >
-                <strong>{{ opt.label }}</strong>
-                <span>{{ opt.hint }}</span>
-              </button>
-            </div>
-
-            <div v-else-if="suggestedChips.length" class="chips-row">
-              <button
-                v-for="chip in suggestedChips"
-                :key="chip"
-                class="chip"
-                :disabled="sending"
-                @click="sendChip(chip)"
-              >
-                {{ chip }}
-              </button>
-            </div>
+            <!--
+              Las opciones ya no viven aqui: viven en el panel de mision. Lo que
+              queda es la vuelta atras para quien lo cerro para escribir a mano.
+            -->
+            <button
+              v-if="hasMission && missionDismissed"
+              class="reopen-btn"
+              :disabled="sending"
+              @click="reopenMission"
+            >
+              <BaseIcon :name="meta.icon" size="xs" color="red" />
+              <span>Ver las {{ chipOptions.length }} opciones</span>
+            </button>
 
             <div class="type-row">
               <textarea
+                ref="textField"
                 v-model="inputMessage"
                 class="text-field"
                 rows="1"
@@ -368,10 +539,34 @@ function sendDate() {
         <PowerCard :card="card" />
       </aside>
     </div>
+
+    <!-- La pregunta del turno, con sitio para que cada opcion se explique -->
+    <MissionModal
+      v-if="showMission"
+      :step="currentStep"
+      :total-steps="totalSteps"
+      :title="meta.title"
+      :ask="currentAsk"
+      :stat-code="meta.statCode"
+      :stat-name="meta.statName"
+      :context-note="contextNote"
+      :icon="meta.icon"
+      :options="chipOptions"
+      :sending="sending"
+      :sensitive="isSensitiveStep"
+      @pick="sendChip"
+      @write="writeInstead"
+      @skip="handleSkip"
+    />
   </div>
 </template>
 
 <style lang="scss" scoped>
+@keyframes progressSweep {
+  0% { transform: translateX(-100%); }
+  55%, 100% { transform: translateX(220%); }
+}
+
 // Mobile-first. Flex exclusivamente, cero grid.
 .audit-page {
   display: flex;
@@ -401,18 +596,84 @@ function sendDate() {
     overflow: hidden;
   }
 
+  // Barrido continuo sobre lo ya ganado: la barra deja de leerse como un
+  // adorno estatico y el avance se siente vivo bloque a bloque.
   .progress-fill {
+    position: relative;
+    overflow: hidden;
     height: 100%;
     border-radius: 3px;
     background-color: $alfii-red;
     box-shadow: 0 0 10px rgba($alfii-red, 0.6);
-    transition: width $dur-slow $ease-out;
+    // Sin transition: GSAP escribe el width en cada frame y una transition
+    // encima anade su propia interpolacion sobre cada uno de esos valores. El
+    // resultado es una barra que va a remolque y se come el rebote.
+
+    &::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent, rgba($alfii-cream, 0.5), transparent);
+      animation: progressSweep 2.6s $ease-in-out infinite;
+    }
   }
 
   .progress-label {
     font-size: $fs-2xs;
     font-weight: $fw-semibold;
     color: rgba($alfii-cream, 0.6);
+  }
+
+  // La carta reducida a chip: la nota y el % de completado, que es lo unico que
+  // se mira de reojo mientras se responde. El resto, a un toque.
+  .card-chip {
+    position: relative;
+    @include row(6px, center, center);
+    flex: 0 0 auto;
+    padding: 6px 11px;
+    border-radius: 20px;
+    background: linear-gradient(135deg, rgba($alfii-plum, 0.95) 0%, rgba($alfii-navy, 0.9) 100%);
+    border: 1px solid rgba($alfii-cream, 0.16);
+    transition: border-color $dur-fast $ease-out, transform $dur-fast $ease-spring;
+
+    &:hover {
+      border-color: rgba($alfii-red, 0.6);
+      transform: translateY(-1px);
+    }
+
+    // El bloque terminado se cobra aqui: sin el destello la nota sube en
+    // silencio y la recompensa se pierde.
+    &.gained {
+      border-color: rgba($alfii-sage, 0.8);
+      animation: pulseGlow 1.1s $ease-in-out 2;
+    }
+
+    .gain-pop {
+      position: absolute;
+      top: -6px;
+      right: -4px;
+      padding: 1px 6px;
+      border-radius: 10px;
+      font-size: $fs-2xs;
+      font-weight: $fw-extrabold;
+      color: $alfii-navy;
+      background-color: $alfii-sage;
+      // La entrada la lleva GSAP con rebote; aqui solo el sitio y el color.
+      pointer-events: none;
+    }
+
+    .chip-rating {
+      font-size: $fs-md;
+      font-weight: $fw-extrabold;
+      line-height: 1;
+      color: $alfii-cream;
+    }
+
+    .chip-pct {
+      font-size: $fs-2xs;
+      font-weight: $fw-bold;
+      color: $alfii-sage;
+    }
   }
 }
 
@@ -432,46 +693,6 @@ function sendDate() {
   width: 100%;
   max-width: 720px;
   margin: 0 auto;
-}
-
-// --- carta en movil ---
-.card-strip {
-  flex: 0 0 auto;
-  padding: 10px clamp(16px, 4vw, 32px) 0;
-
-  .strip-toggle {
-    @include row(12px, center);
-    width: 100%;
-    padding: 10px 14px;
-    border-radius: 14px;
-    background: linear-gradient(135deg, rgba($alfii-plum, 0.95) 0%, rgba($alfii-navy, 0.9) 100%);
-    border: 1px solid rgba($alfii-cream, 0.14);
-  }
-
-  .strip-rating {
-    font-size: $fs-xl;
-    font-weight: $fw-extrabold;
-    color: $alfii-cream;
-    line-height: 1;
-  }
-
-  .strip-txt {
-    @include stack(2px, flex-start);
-    flex: 1;
-
-    strong { font-size: $fs-xs; font-weight: $fw-bold; }
-    em {
-      font-style: normal;
-      font-size: $fs-2xs;
-      color: rgba($alfii-cream, 0.55);
-    }
-  }
-
-  .strip-body {
-    @include center;
-    padding-top: 10px;
-    animation: fadeInUp $dur-base $ease-out both;
-  }
 }
 
 .audit-thread {
@@ -540,36 +761,53 @@ function sendDate() {
 }
 
 // --- zona de respuesta ---
+// Tres franjas finas y nada mas: titulo (1 linea), opciones (1 fila) e input.
+// El alto total no depende de cuantas opciones mande el backend, que era lo que
+// hacia que en un movil corto la conversacion desapareciera.
 .audit-input {
   flex: 0 0 auto;
-  @include stack(10px);
-  padding: 12px clamp(16px, 4vw, 32px);
-  padding-bottom: max(12px, env(safe-area-inset-bottom));
+  @include stack(9px);
+  padding: 10px clamp(16px, 4vw, 32px);
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
   border-top: 1px solid rgba($alfii-cream, 0.08);
   background-color: rgba($alfii-plum, 0.4);
 }
 
-// Lo que se pide, fijo encima del input: en el hilo la pregunta se pierde en
-// cuanto entran dos mensajes mas.
+// Una linea, con puntos suspensivos si no cabe: el pie tiene alto fijo y esto
+// no puede ser lo que lo rompa.
+.recall-line {
+  @include row(6px, center);
+  min-width: 0;
+  font-size: $fs-2xs;
+  color: rgba($alfii-sage, 0.9);
+  animation: fadeInUp $dur-base $ease-out both;
+
+  span {
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+// Una linea. El texto largo de la pregunta ya esta en el hilo.
 .step-brief {
-  @include stack(5px);
-  padding: 11px 14px;
-  border-radius: 13px;
-  background-color: rgba($alfii-red, 0.1);
-  border: 1px solid rgba($alfii-red, 0.28);
+  @include row(8px, center);
+  min-width: 0;
 
-  .brief-head {
-    @include row(8px, center);
-
-    h3 {
-      flex: 1;
-      font-size: $fs-sm;
-      font-weight: $fw-bold;
-      color: $alfii-cream;
-    }
+  h3 {
+    flex: 1;
+    min-width: 0;
+    font-size: $fs-sm;
+    font-weight: $fw-bold;
+    color: $alfii-cream;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .brief-gain {
+    flex: 0 0 auto;
     font-size: $fs-2xs;
     font-weight: $fw-bold;
     letter-spacing: 0.05em;
@@ -577,74 +815,29 @@ function sendDate() {
     color: $alfii-sage;
     white-space: nowrap;
   }
-
-  .brief-ask {
-    font-size: $fs-xs;
-    line-height: $lh-relaxed;
-    color: rgba($alfii-cream, 0.75);
-  }
 }
 
-// Tarjetas con explicacion: se envuelven en varias filas en vez de scrollar en
-// horizontal, porque una opcion que hay que descubrir arrastrando no se elige.
-.options-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  max-height: 34dvh;
-  @include scroll-y;
+// Vuelta al panel para quien lo cerro para escribir a mano. Solo aparece en ese
+// caso: mostrarlo siempre seria un boton que compite con el panel ya abierto.
+.reopen-btn {
+  @include row(7px, center, center);
+  align-self: center;
+  padding: 7px 14px;
+  border-radius: 20px;
+  font-size: $fs-xs;
+  font-weight: $fw-semibold;
+  color: $alfii-cream;
+  background-color: rgba($alfii-red, 0.14);
+  border: 1px solid rgba($alfii-red, 0.35);
+  transition: border-color $dur-fast $ease-out, background-color $dur-fast $ease-out;
+  animation: fadeInUp $dur-base $ease-out both;
 
-  .option-card {
-    @include stack(3px, flex-start);
-    flex: 1 1 165px;
-    text-align: left;
-    padding: 10px 13px;
-    border-radius: 13px;
-    background-color: rgba($alfii-navy, 0.72);
-    border: 1px solid rgba($alfii-cream, 0.14);
-    transition: border-color $dur-fast $ease-out, background-color $dur-fast $ease-out;
-
-    &:hover:not(:disabled) {
-      border-color: rgba($alfii-red, 0.55);
-      background-color: rgba($alfii-plum, 0.9);
-    }
-
-    &:disabled { opacity: 0.5; }
-
-    strong {
-      font-size: $fs-sm;
-      font-weight: $fw-bold;
-      color: $alfii-cream;
-    }
-
-    span {
-      font-size: $fs-2xs;
-      line-height: $lh-snug;
-      color: rgba($alfii-cream, 0.6);
-    }
+  &:hover:not(:disabled) {
+    border-color: rgba($alfii-red, 0.7);
+    background-color: rgba($alfii-red, 0.22);
   }
-}
 
-.chips-row {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding-bottom: 2px;
-
-  .chip {
-    flex: 0 0 auto;
-    padding: 9px 14px;
-    border-radius: 20px;
-    font-size: $fs-xs;
-    font-weight: $fw-semibold;
-    color: $alfii-cream;
-    background-color: rgba($alfii-navy, 0.7);
-    border: 1px solid rgba($alfii-cream, 0.16);
-    transition: border-color $dur-fast $ease-out;
-
-    &:hover:not(:disabled) { border-color: rgba($alfii-red, 0.6); }
-    &:disabled { opacity: 0.5; }
-  }
+  &:disabled { opacity: 0.5; }
 }
 
 .type-row {
@@ -687,7 +880,8 @@ function sendDate() {
   padding: 4px 8px;
 }
 
-// La carta lateral solo existe en escritorio: en movil vive en la tira de arriba.
+// La carta lateral solo existe en escritorio: en movil vive en el chip de la
+// cabecera, que la abre en su hoja.
 .card-col {
   display: none;
 }
@@ -706,7 +900,8 @@ function sendDate() {
     max-width: 640px;
   }
 
-  .card-strip { display: none; }
+  // En escritorio la carta ya esta entera en la columna: el chip sobra.
+  .audit-head .card-chip { display: none; }
 
   .card-col {
     display: flex;
