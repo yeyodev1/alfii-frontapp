@@ -58,6 +58,16 @@ const routes: Array<RouteRecordRaw> = [
     component: () => import('../views/LegalView.vue'),
     meta: { title: 'Aviso Legal, Términos y Privacidad — alfii', depth: 1 },
   },
+  // El backend es quien decide el acceso (ADMIN_EMAILS): la ruta existe para
+  // todos pero sin permiso solo muestra el aviso de "solo administradores".
+  {
+    path: '/admin',
+    name: 'Admin',
+    component: () => import('../views/AdminView.vue'),
+    // immersive: el portal trae su propio sidebar y scroll; la barra inferior
+    // de la app no pinta nada aqui.
+    meta: { title: 'Administración — alfii', fullWidth: true, immersive: true, depth: 1 },
+  },
   {
     path: '/settings',
     name: 'Settings',
