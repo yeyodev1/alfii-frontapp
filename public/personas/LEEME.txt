@@ -1,0 +1,7 @@
+Coloca aqui las 5 fotos (jpg, cuadradas idealmente):
+  harvey.jpg
+  hitch.jpg
+  bond.jpg
+  barney.jpg
+  stark.jpg
+Si falta alguna, la tarjeta muestra el avatar con iniciales.
