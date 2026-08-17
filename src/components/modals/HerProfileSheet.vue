@@ -19,6 +19,7 @@ export interface HerProfile {
   knownSinceMonths?: number;
   herAge?: number;
   herOccupation?: string;
+  instagram?: string;
   relationshipGoal?: RelationshipGoal;
   notes?: string;
 }
@@ -91,9 +92,10 @@ const saving = ref(false);
 
 const ageText = ref(draft.value.herAge ? String(draft.value.herAge) : '');
 const occupationText = ref(draft.value.herOccupation ?? '');
+const instagramText = ref(draft.value.instagram ?? '');
 const notesText = ref(draft.value.notes ?? '');
 
-const TOTAL_STEPS = 6;
+const TOTAL_STEPS = 7;
 
 const isLast = computed(() => step.value === TOTAL_STEPS - 1);
 const progress = computed(() => Math.round(((step.value + 1) / TOTAL_STEPS) * 100));
@@ -104,6 +106,14 @@ const ageValid = computed(() => {
   const n = Number(ageText.value);
   return Number.isInteger(n) && n >= 18 && n <= 99;
 });
+
+// Mismo criterio de normalizado que el backend: sin @, minúsculas, 30 chars
+const instagramClean = computed(() =>
+  instagramText.value.trim().replace(/^@+/, '').toLowerCase().slice(0, 30)
+);
+const instagramValid = computed(
+  () => !instagramClean.value || /^[a-z0-9._]+$/.test(instagramClean.value)
+);
 
 function pickHowWeMet(value: HowWeMet) {
   draft.value.howWeMet = value;
@@ -144,6 +154,7 @@ function commitTextFields() {
   }
   const occ = occupationText.value.trim();
   if (occ) draft.value.herOccupation = occ.slice(0, 80);
+  if (instagramClean.value && instagramValid.value) draft.value.instagram = instagramClean.value;
   const notes = notesText.value.trim();
   if (notes) draft.value.notes = notes.slice(0, 500);
 }
@@ -160,6 +171,7 @@ async function save() {
   }
   if (typeof draft.value.herAge === 'number') payload.herAge = draft.value.herAge;
   if (draft.value.herOccupation) payload.herOccupation = draft.value.herOccupation;
+  if (draft.value.instagram) payload.instagram = draft.value.instagram;
   if (draft.value.relationshipGoal) payload.relationshipGoal = draft.value.relationshipGoal;
   if (draft.value.notes) payload.notes = draft.value.notes;
 
@@ -266,8 +278,32 @@ async function save() {
         </div>
       </section>
 
-      <!-- 5. Que buscas -->
+      <!-- 5. Instagram -->
       <section v-else-if="step === 4" class="step">
+        <h3>¿Cuál es su Instagram?</h3>
+        <p class="sub">Su perfil dice mucho: estilo de vida, círculo, cómo se muestra.</p>
+        <div class="field">
+          <div class="ig-field">
+            <BaseIcon name="platform.instagram" size="sm" color="muted" />
+            <span class="ig-at">@</span>
+            <input
+              v-model="instagramText"
+              type="text"
+              maxlength="31"
+              autocapitalize="off"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="usuario"
+            />
+          </div>
+          <span v-if="!instagramValid" class="field-error">
+            Solo letras, números, puntos y guiones bajos.
+          </span>
+        </div>
+      </section>
+
+      <!-- 6. Que buscas -->
+      <section v-else-if="step === 5" class="step">
         <h3>¿Qué buscas con ella?</h3>
         <p class="sub">Sin esto, Alfii calibra a ciegas hacia dónde empujar.</p>
         <div class="option-wrap column">
@@ -292,7 +328,7 @@ async function save() {
         </div>
       </section>
 
-      <!-- 6. Notas libres -->
+      <!-- 7. Notas libres -->
       <section v-else class="step">
         <h3>¿Algo que deba saber de ella?</h3>
         <p class="sub">
@@ -322,7 +358,7 @@ async function save() {
           <button
             type="button"
             class="btn-primary"
-            :disabled="saving || !ageValid"
+            :disabled="saving || !ageValid || !instagramValid"
             @click="next"
           >
             <BaseIcon v-if="saving" name="spinner" spin size="xs" color="plum" />
@@ -461,6 +497,31 @@ async function save() {
   .field-error {
     font-size: $fs-2xs;
     color: $alfii-red;
+  }
+
+  .ig-field {
+    @include row(8px, center);
+    padding: 0 16px;
+    background-color: rgba($alfii-navy, 0.6);
+    border: 1px solid rgba($alfii-cream, 0.18);
+    border-radius: 12px;
+
+    &:focus-within { border-color: $alfii-sage; }
+
+    .ig-at {
+      color: rgba($alfii-cream, 0.5);
+      font-size: $fs-md;
+      font-weight: $fw-semibold;
+    }
+
+    input {
+      flex: 1 1 auto;
+      padding: 14px 0;
+      background: transparent;
+      border: none;
+
+      &:focus { border: none; }
+    }
   }
 
   .field-count {
