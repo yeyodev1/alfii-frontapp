@@ -26,10 +26,11 @@ export interface TargetSummary {
     knownSinceMonths?: number;
     herAge?: number;
     herOccupation?: string;
+    instagram?: string;
     relationshipGoal?: string;
     notes?: string;
   } | null;
-  /** 5 campos, 20% cada uno. `notes` no puntua a proposito: es opcional. */
+  /** 6 campos que puntúan. `notes` no puntua a proposito: es opcional. */
   herCompleteness: { score: number; missing: string[] };
   archetype: { primary: string; label: string; hybrid: string[]; confidence: number } | null;
   risk: { level: string; transactionalRisk: number; flagCount: number };
