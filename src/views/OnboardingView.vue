@@ -3,6 +3,7 @@ import SkipDataModal from '@/components/modals/SkipDataModal.vue';
 import LessonSheet from '@/components/modals/LessonSheet.vue';
 import CardSheet from '@/components/modals/CardSheet.vue';
 import MissionModal from '@/components/modals/MissionModal.vue';
+import PersonaSheet, { PERSONA_LABELS } from '@/components/modals/PersonaSheet.vue';
 import AlfiiLogo from '@/components/shared/AlfiiLogo.vue';
 import BaseIcon from '@/components/shared/BaseIcon.vue';
 import PowerCard from '@/components/shared/PowerCard.vue';
@@ -34,6 +35,74 @@ const inputMessage = ref('');
 const sending = ref(false);
 const dateInput = ref('');
 const chatContainer = ref<HTMLElement | null>(null);
+
+/** Voz elegida de Alfii (clave del backend) o null si todavia no elige. */
+const persona = ref<string | null>(null);
+/** true mientras se van soltando las burbujas encadenadas de un mismo turno. */
+const chaining = ref(false);
+
+const personaLabel = computed(() =>
+  persona.value ? PERSONA_LABELS[persona.value] ?? persona.value : null
+);
+
+function openPersonaSheet() {
+  open('persona', PersonaSheet, {
+    current: persona.value,
+    onPicked: (key: string) => {
+      persona.value = key;
+    },
+  });
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Suelta la respuesta de Alfii como mensajes encadenados, estilo WhatsApp.
+ *
+ * El disparador es la LINEA EN BLANCO: el backend separa asi el cierre de un
+ * bloque del arranque del siguiente, y el prompt le pide al modelo separar
+ * ideas igual. Entre burbuja y burbuja se ven los puntitos de "escribiendo",
+ * que es lo que hace que se lea como alguien tecleando y no como un volcado.
+ */
+async function pushAlfiiReply(reply: string) {
+  const parts = reply
+    .split(/\n{2,}/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  if (!parts.length) return;
+
+  messages.value.push({ role: 'alfii', content: parts[0]! });
+  scrollToBottom();
+
+  if (parts.length === 1) return;
+
+  chaining.value = true;
+  try {
+    for (const part of parts.slice(1)) {
+      scrollToBottom();
+      // Pausa proporcional a lo que "escribe": corta para frases, con tope.
+      await sleep(Math.min(500 + part.length * 6, 1600));
+      messages.value.push({ role: 'alfii', content: part });
+      scrollToBottom();
+    }
+  } finally {
+    chaining.value = false;
+  }
+}
+
+/** El historial rehidratado se parte igual, pero sin teatro: instantaneo. */
+function splitHistory(history: { role: 'user' | 'alfii'; content: string }[]) {
+  return history.flatMap((m) =>
+    m.role === 'alfii'
+      ? m.content
+          .split(/\n{2,}/)
+          .map((p) => p.trim())
+          .filter(Boolean)
+          .map((content) => ({ role: 'alfii' as const, content }))
+      : [m]
+  );
+}
 
 // La carta es la recompensa del test: se muestra al completar y, si el usuario
 // ya la vio antes, se refresca en cada bloque para que vea subir las stats.
@@ -87,7 +156,7 @@ const STEP_META: Record<string, StepMeta> = {
   },
   STATUS: {
     title: '¿A qué te dedicas?',
-    ask: 'Tu trabajo y qué tan bien te va del 1 al 5.',
+    ask: 'Tu trabajo real y cómo te va de verdad, con tus palabras.',
     gain: 'Sube EST · Estatus',
     statCode: 'EST',
     statName: 'Estatus',
@@ -127,7 +196,7 @@ const STEP_META: Record<string, StepMeta> = {
   },
   PHYSIQUE: {
     title: '¿Altura y complexión?',
-    ask: 'Estatura, peso si lo tienes a mano, y cómo te ves del 1 al 5. Opcional.',
+    ask: 'Estatura, peso si lo tienes a mano, y cómo te ves hoy. Opcional.',
     gain: 'Sube FIS · Físico',
     statCode: 'FIS',
     statName: 'Físico',
@@ -138,6 +207,19 @@ const STEP_META: Record<string, StepMeta> = {
 const meta = computed(
   () => STEP_META[stepKey.value] ?? STEP_META.PREFERRED_NAME!
 );
+
+/**
+ * Titulo de la sub-pregunta de ESTE turno, que manda el backend.
+ *
+ * PORQUE: el titulo del bloque es estatico pero el bloque encadena
+ * sub-preguntas. En ESTATUS el usuario ya habia contestado "¿a que te
+ * dedicas?" y la tarjeta seguia titulada asi mientras Alfii preguntaba la
+ * escala del 1 al 5: dos preguntas distintas en la misma tarjeta. Vacio al
+ * abrir bloque, y ahi el titulo canonico del bloque es el correcto.
+ */
+const turnQuestion = ref('');
+
+const cardTitle = computed(() => turnQuestion.value || meta.value.title);
 
 /**
  * Lo que Alfii acaba de preguntar, no lo que el bloque pregunta en general.
@@ -275,9 +357,13 @@ async function refreshCard() {
 
 function scrollToBottom() {
   nextTick(() => {
-    if (chatContainer.value) {
-      chatContainer.value.scrollTop = chatContainer.value.scrollHeight;
-    }
+    if (!chatContainer.value) return;
+    // Baja deslizandose, no de golpe: el chat debe sentirse vivo. Con
+    // movimiento reducido respeta la preferencia y salta directo.
+    chatContainer.value.scrollTo({
+      top: chatContainer.value.scrollHeight,
+      behavior: motionOk ? 'smooth' : 'auto',
+    });
   });
 }
 
@@ -289,10 +375,12 @@ onMounted(async () => {
     // conversacion previa y se rehidrata tal cual. El opener solo se pinta
     // cuando de verdad es el primer turno.
     if (res.history?.length) {
-      messages.value = res.history.map((m: any) => ({ role: m.role, content: m.content }));
+      messages.value = splitHistory(
+        res.history.map((m: any) => ({ role: m.role, content: m.content }))
+      );
     }
     if (res.reply) {
-      messages.value.push({ role: 'alfii', content: res.reply });
+      void pushAlfiiReply(res.reply);
     }
 
     // La carta ya puede tener stats de una sesion anterior.
@@ -303,8 +391,17 @@ onMounted(async () => {
     stepKey.value = res.stepKey;
     chipOptions.value = res.chipOptions || [];
     contextNote.value = res.contextNote || '';
+    turnQuestion.value = res.question || '';
+    persona.value = res.persona ?? null;
     missionOpen.value = chipOptions.value.length > 0;
     scrollToBottom();
+
+    // Primera visita sin voz elegida: se ofrece el selector antes de que la
+    // conversacion arranque de verdad. Elegir como te hablan es parte del
+    // gancho, no un ajuste escondido.
+    if (!res.persona && !res.resumed && !completed.value) {
+      setTimeout(openPersonaSheet, 900);
+    }
   } catch (err: any) {
     toastStore.show(err.message || 'Error al iniciar la auditoría', 'error');
   }
@@ -325,12 +422,13 @@ async function sendTurn(payload: { message?: string; chipSelection?: string[]; b
 
   try {
     const res: any = await api.post('/onboarding/message', payload);
-    messages.value.push({ role: 'alfii', content: res.reply });
+    void pushAlfiiReply(res.reply);
     currentStep.value = res.step;
     totalSteps.value = res.totalSteps;
     stepKey.value = res.stepKey;
     chipOptions.value = res.chipOptions || [];
     contextNote.value = res.contextNote || '';
+    turnQuestion.value = res.question || '';
     inputMessage.value = '';
     dateInput.value = '';
 
@@ -451,10 +549,11 @@ function sendDate() {
             </div>
           </div>
 
-          <div v-if="sending" class="msg-row alfii">
+          <div v-if="sending || chaining" class="msg-row alfii">
             <div class="bubble typing">
-              <BaseIcon name="thinking" size="sm" color="red" spin />
-              <span>Alfii está anotando...</span>
+              <span class="typing-dots" aria-label="Alfii está escribiendo">
+                <i></i><i></i><i></i>
+              </span>
             </div>
           </div>
 
@@ -478,16 +577,12 @@ function sendDate() {
             Los bloques de texto libre (estatus, activos) no abren panel, asi que
             sin esto la memoria de Alfii solo se veria en la mitad de los pasos.
           -->
-          <p v-if="contextNote && !showMission" class="recall-line">
-            <BaseIcon name="thinking" size="xs" color="sage" />
-            <span>{{ contextNote }}</span>
-          </p>
-
-          <div class="step-brief">
-            <BaseIcon :name="meta.icon" size="xs" color="red" />
-            <h3>{{ meta.title }}</h3>
-            <span class="brief-gain">{{ meta.gain }}</span>
-          </div>
+          <!--
+            Puro chat: la pregunta ya vive en la burbuja de Alfii y el titulo
+            del turno en el modal de opciones. Repetirlos aqui era una segunda
+            tarjeta que competia con la conversacion (y donde nacio el desfase
+            titulo-vs-chat).
+          -->
 
           <!-- Fecha de nacimiento: selector propio, nunca el nativo -->
           <BirthDatePicker
@@ -527,10 +622,17 @@ function sendDate() {
             </div>
           </template>
 
-          <button class="skip-btn" :disabled="sending" @click="handleSkip">
-            <BaseIcon name="forward" size="xs" color="muted" />
-            <span>{{ isSensitiveStep ? 'Prefiero no decirlo' : 'Saltar este dato' }}</span>
-          </button>
+          <div class="foot-row">
+            <button class="skip-btn" :disabled="sending" @click="handleSkip">
+              <BaseIcon name="forward" size="xs" color="muted" />
+              <span>{{ isSensitiveStep ? 'Prefiero no decirlo' : 'Saltar este dato' }}</span>
+            </button>
+
+            <button class="skip-btn" :disabled="sending" @click="openPersonaSheet">
+              <BaseIcon name="robot" size="xs" color="muted" />
+              <span>{{ personaLabel ? `Voz: ${personaLabel}` : 'Elegir voz de Alfii' }}</span>
+            </button>
+          </div>
         </footer>
       </div>
 
@@ -545,7 +647,7 @@ function sendDate() {
       v-if="showMission"
       :step="currentStep"
       :total-steps="totalSteps"
-      :title="meta.title"
+      :title="cardTitle"
       :ask="currentAsk"
       :stat-code="meta.statCode"
       :stat-name="meta.statName"
@@ -730,14 +832,52 @@ function sendDate() {
     border-radius: 16px;
     font-size: $fs-sm;
     line-height: $lh-relaxed;
-    animation: fadeInUp $dur-base $ease-out both;
+    // Entrada propia y no fadeInUp generico: sube menos, dura mas y arranca
+    // levemente encogida. Es la diferencia entre "aparecio" y "llego".
+    animation: bubbleIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+    transform-origin: bottom left;
 
     &.typing {
       @include row(8px, center);
-      font-size: $fs-xs;
-      color: rgba($alfii-cream, 0.6);
+      padding: 14px 18px;
     }
   }
+
+  &.user .bubble {
+    transform-origin: bottom right;
+  }
+}
+
+@keyframes bubbleIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+// Tres puntos que respiran, el lenguaje universal de "esta escribiendo".
+.typing-dots {
+  @include row(5px, center);
+
+  i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background-color: rgba($alfii-cream, 0.55);
+    animation: dotPulse 1.2s ease-in-out infinite;
+
+    &:nth-child(2) { animation-delay: 0.15s; }
+    &:nth-child(3) { animation-delay: 0.3s; }
+  }
+}
+
+@keyframes dotPulse {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.45; }
+  30% { transform: translateY(-5px); opacity: 1; }
 }
 
 .done-block {
@@ -771,50 +911,6 @@ function sendDate() {
   padding-bottom: max(10px, env(safe-area-inset-bottom));
   border-top: 1px solid rgba($alfii-cream, 0.08);
   background-color: rgba($alfii-plum, 0.4);
-}
-
-// Una linea, con puntos suspensivos si no cabe: el pie tiene alto fijo y esto
-// no puede ser lo que lo rompa.
-.recall-line {
-  @include row(6px, center);
-  min-width: 0;
-  font-size: $fs-2xs;
-  color: rgba($alfii-sage, 0.9);
-  animation: fadeInUp $dur-base $ease-out both;
-
-  span {
-    min-width: 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-}
-
-// Una linea. El texto largo de la pregunta ya esta en el hilo.
-.step-brief {
-  @include row(8px, center);
-  min-width: 0;
-
-  h3 {
-    flex: 1;
-    min-width: 0;
-    font-size: $fs-sm;
-    font-weight: $fw-bold;
-    color: $alfii-cream;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .brief-gain {
-    flex: 0 0 auto;
-    font-size: $fs-2xs;
-    font-weight: $fw-bold;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    color: $alfii-sage;
-    white-space: nowrap;
-  }
 }
 
 // Vuelta al panel para quien lo cerro para escribir a mano. Solo aparece en ese
@@ -871,6 +967,10 @@ function sendDate() {
   &:disabled { opacity: 0.4; box-shadow: none; }
 }
 
+.foot-row {
+  @include row(14px, center, center);
+}
+
 .skip-btn {
   @include row(6px, center, center);
   align-self: center;
@@ -878,6 +978,8 @@ function sendDate() {
   font-weight: $fw-semibold;
   color: rgba($alfii-cream, 0.5);
   padding: 4px 8px;
+
+  &:hover:not(:disabled) { color: rgba($alfii-cream, 0.8); }
 }
 
 // La carta lateral solo existe en escritorio: en movil vive en el chip de la
