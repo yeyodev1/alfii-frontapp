@@ -6,12 +6,18 @@ import AlfiiLogo from '@/components/shared/AlfiiLogo.vue';
 const emit = defineEmits<{
   (e: 'close'): void;
   (e: 'upload'): void;
+  (e: 'import'): void;
   (e: 'start-audit'): void;
 }>();
 
 function handleUpload() {
   emit('close');
   emit('upload');
+}
+
+function handleImport() {
+  emit('close');
+  emit('import');
 }
 
 function handleStartAudit() {
@@ -50,6 +56,11 @@ function handleStartAudit() {
         <button class="primary-btn" @click="handleUpload">
           <BaseIcon name="upload" color="cream" size="base" />
           <span>Subir mi primera captura</span>
+        </button>
+
+        <button class="secondary-btn" @click="handleImport">
+          <BaseIcon name="platform.whatsapp" color="cream" size="xs" />
+          <span>Importar la conversación completa (.txt)</span>
         </button>
 
         <button class="secondary-btn" @click="handleStartAudit">
