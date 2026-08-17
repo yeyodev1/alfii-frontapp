@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import BaseSheet from '@/components/modals/BaseSheet.vue';
 import BaseIcon from '@/components/shared/BaseIcon.vue';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 
 /**
  * Choque de nombres al crear un expediente.
@@ -21,13 +21,28 @@ const props = defineProps<{
     analysisCount?: number;
     lastMessageAt?: string | null;
   };
+  // Callbacks awaitables y no emits: ambas opciones disparan una peticion al
+  // backend y los botones deben mostrar la espera real (mismo criterio que
+  // NameConfirmSheet).
+  onMerge?: () => Promise<unknown> | void;
+  onSeparate?: () => Promise<unknown> | void;
 }>();
 
 const emit = defineEmits<{
-  (e: 'merge'): void;
-  (e: 'separate'): void;
   (e: 'close'): void;
 }>();
+
+const working = ref<'merge' | 'separate' | null>(null);
+
+async function choose(kind: 'merge' | 'separate') {
+  if (working.value) return;
+  working.value = kind;
+  try {
+    await (kind === 'merge' ? props.onMerge?.() : props.onSeparate?.());
+  } finally {
+    working.value = null;
+  }
+}
 
 const STAGE_LABELS: Record<string, string> = {
   APERTURA: 'Apertura',
@@ -76,23 +91,25 @@ const lastActivity = computed(() => {
         </div>
       </div>
 
-      <button class="choice primary" @click="emit('merge')">
-        <BaseIcon name="check" size="sm" color="cream" />
+      <button class="choice primary" :disabled="!!working" @click="choose('merge')">
+        <BaseIcon v-if="working === 'merge'" name="spinner" spin size="sm" color="cream" />
+        <BaseIcon v-else name="check" size="sm" color="cream" />
         <span class="ch-txt">
-          <strong>Es la misma</strong>
+          <strong>{{ working === 'merge' ? 'Sumando a su expediente...' : 'Es la misma' }}</strong>
           <em>Sumo esta captura a su expediente y sigo recordando todo</em>
         </span>
       </button>
 
-      <button class="choice" @click="emit('separate')">
-        <BaseIcon name="plus" size="sm" color="sage" />
+      <button class="choice" :disabled="!!working" @click="choose('separate')">
+        <BaseIcon v-if="working === 'separate'" name="spinner" spin size="sm" color="sage" />
+        <BaseIcon v-else name="plus" size="sm" color="sage" />
         <span class="ch-txt">
-          <strong>Es otra persona</strong>
+          <strong>{{ working === 'separate' ? 'Creando expediente...' : 'Es otra persona' }}</strong>
           <em>Creo un expediente aparte y las distingo por el nombre</em>
         </span>
       </button>
 
-      <button class="cancel" @click="emit('close')">Ahora no</button>
+      <button class="cancel" :disabled="!!working" @click="emit('close')">Ahora no</button>
     </div>
   </BaseSheet>
 </template>
@@ -146,7 +163,12 @@ const lastActivity = computed(() => {
   border: 1px solid rgba($alfii-cream, 0.14);
   transition: border-color $dur-fast $ease-out;
 
-  &:hover { border-color: rgba($alfii-cream, 0.3); }
+  &:hover:not(:disabled) { border-color: rgba($alfii-cream, 0.3); }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: wait;
+  }
 
   &.primary {
     background: linear-gradient(135deg, rgba($alfii-plum, 0.95) 0%, rgba($alfii-red, 0.22) 100%);
