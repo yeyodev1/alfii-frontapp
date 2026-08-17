@@ -9,6 +9,8 @@ export interface User {
   preferredName: string | null;
   hasBirthDate: boolean;
   plan: 'free' | 'pro';
+  /** Acceso pro regalado por el admin. */
+  isVip?: boolean;
   legalUpToDate: boolean;
 }
 
