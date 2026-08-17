@@ -2,9 +2,12 @@
 import BaseIcon from '@/components/shared/BaseIcon.vue';
 import AnalysisCard from '@/components/shared/AnalysisCard.vue';
 import RiskBadge from '@/components/shared/RiskBadge.vue';
+import HerProfileCard from '@/components/shared/HerProfileCard.vue';
+import ImportSheet from '@/components/modals/ImportSheet.vue';
 import { ref, onMounted, nextTick } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '@/services/http';
+import { useModal } from '@/composables/useModal';
 
 import { useToastStore } from '@/stores/toast';
 
@@ -18,6 +21,17 @@ const sending = ref(false);
 const fileInput = ref<HTMLInputElement | null>(null);
 const chatContainer = ref<HTMLElement | null>(null);
 const toastStore = useToastStore();
+const showProfile = ref(false);
+
+/** Recarga el expediente sin tocar el hilo: lo dispara el evento SSE `state`. */
+async function refreshTarget() {
+  try {
+    const res: any = await api.get(`/targets/${targetId}`);
+    target.value = res.target;
+  } catch {
+    // Si falla, el header se queda con el estado anterior; no rompe el chat
+  }
+}
 
 function scrollToBottom() {
   nextTick(() => {
@@ -54,6 +68,25 @@ onMounted(async () => {
 
 function triggerUpload() {
   fileInput.value?.click();
+}
+
+const { open } = useModal();
+
+/** Import del chat completo sobre este expediente: mas contexto que una captura. */
+function openImport() {
+  open('importChat', ImportSheet, {
+    targetId,
+    onAnalyzed: (res: any) => {
+      messages.value.push({
+        role: 'alfii',
+        kind: 'analysis',
+        analysisId: { payload: res.analysis },
+        content: res.analysis.lead,
+      });
+      if (res.target) target.value = res.target;
+      scrollToBottom();
+    },
+  });
 }
 
 async function handleFileSelected(event: Event) {
@@ -144,6 +177,10 @@ async function sendTextMessage() {
               // Parse fallback
             }
           }
+        } else if (line.startsWith('event: state')) {
+          // El backend guardo cambios de expediente (medidores, datos de ella
+          // extraidos del chat): se refresca el header y la tarjeta de perfil.
+          void refreshTarget();
         }
       }
     }
@@ -172,16 +209,29 @@ async function sendTextMessage() {
         <BaseIcon name="back" size="sm" color="cream" />
       </RouterLink>
 
-      <div class="target-info">
+      <!-- Tappable: abre/cierra la ficha de ella sin salir del chat -->
+      <button class="target-info" type="button" @click="showProfile = !showProfile">
         <h3>{{ target.displayName }}</h3>
         <div class="sub-row">
           <span class="arq" v-if="target.archetype">{{ target.archetype.label }}</span>
           <span class="stage">{{ target.stage }}</span>
+          <BaseIcon :name="showProfile ? 'arrowUp' : 'arrowRight'" size="xs" color="muted" />
         </div>
-      </div>
+      </button>
 
       <RiskBadge :level="(target.risk?.level as any) || 'LIMPIO'" />
     </header>
+
+    <!-- Ficha de ella: colapsable bajo el header -->
+    <div v-if="target && showProfile" class="profile-panel">
+      <HerProfileCard
+        :target-id="targetId"
+        :display-name="target.displayName"
+        :her-profile="target.herProfile"
+        :completeness="target.herCompleteness"
+        @saved="(t: any) => (target = t)"
+      />
+    </div>
 
     <!-- Hilo de mensajes -->
     <div ref="chatContainer" class="chat-thread">
@@ -219,6 +269,15 @@ async function sendTextMessage() {
     <footer class="input-bar">
       <button class="upload-btn" @click="triggerUpload" :disabled="sending">
         <BaseIcon name="camera" size="base" color="cream" />
+      </button>
+
+      <button
+        class="upload-btn"
+        title="Importar conversación completa"
+        :disabled="sending"
+        @click="openImport"
+      >
+        <BaseIcon name="platform.whatsapp" size="base" color="cream" />
       </button>
 
       <textarea
@@ -263,6 +322,9 @@ async function sendTextMessage() {
   .target-info {
     flex: 1;
     @include stack(2px);
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
 
     h3 { font-size: $fs-md; font-weight: $fw-bold; color: $alfii-cream; }
     .sub-row {
@@ -272,6 +334,14 @@ async function sendTextMessage() {
       .arq { color: $alfii-sage; font-weight: $fw-bold; }
     }
   }
+}
+
+.profile-panel {
+  flex: 0 0 auto;
+  padding: 10px clamp(16px, 4vw, 24px);
+  border-bottom: 1px solid rgba($alfii-cream, 0.08);
+  background-color: rgba($alfii-navy, 0.5);
+  animation: fadeInUp $dur-base $ease-out both;
 }
 
 // min-height: 0 para que el hilo scrollee dentro y no empuje la barra de input
