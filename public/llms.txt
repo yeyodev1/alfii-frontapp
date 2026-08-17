@@ -11,6 +11,16 @@ alfii lee la captura de una conversación y devuelve un análisis por bloques: a
 - Auditoría inicial: ocho bloques conversacionales para que las respuestas sugeridas suenen al usuario y no a un guion genérico.
 - Asesor con personalidad: el usuario elige el estilo de su asesor (inspirado en estrategas clásicos del cine y la TV).
 
+## Guías (contenido educativo)
+
+- [Todas las guías](https://alfii.ec/guias/): respuestas directas a las situaciones más comunes del chat y las citas.
+- [Qué responder cuando te deja en visto](https://alfii.ec/guias/que-responder-cuando-te-deja-en-visto): qué significa el visto, cuánto esperar y cómo reabrir sin perder el marco.
+- [Cómo saber si le gustas por el chat](https://alfii.ec/guias/como-saber-si-le-gustas-por-el-chat): las señales de interés fiables — iniciativa, preguntas e inversión simétrica.
+- [Pelea con tu novia: cómo arreglarla](https://alfii.ec/guias/pelea-con-tu-novia-como-arreglarla): qué escribir después de una pelea, qué mensajes la empeoran y cuándo hablar en persona.
+- [Cómo iniciar una conversación con una chica](https://alfii.ec/guias/como-iniciar-conversacion-con-una-chica): la fórmula contexto + observación + pregunta fácil.
+- [Señales de que está perdiendo el interés](https://alfii.ec/guias/senales-de-que-esta-perdiendo-interes): cómo distinguir una mala semana de un adiós en cámara lenta.
+- [Cómo mantener una conversación interesante](https://alfii.ec/guias/como-mantener-una-conversacion-interesante): hilos abiertos, especificidad y el momento de cortar hacia un plan.
+
 ## Información clave
 
 - [Preguntas frecuentes](https://alfii.ec/): en la página principal — privacidad de capturas, precisión del análisis, apps compatibles.
