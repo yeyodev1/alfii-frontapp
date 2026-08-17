@@ -5,8 +5,119 @@
     <link rel="icon" type="image/png" href="/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#0d1321" />
-    <meta name="description" content="alfii — Tu asesor privado de alta estrategia y contrainteligencia emocional." />
-    <title>alfii — Asesor privado</title>
+    <meta
+      name="description"
+      content="Sube una captura de la conversación y alfii te dice qué está pasando de verdad y qué responder. Análisis con IA, privado y calibrado contigo."
+    />
+    <title>alfii — Analiza sus mensajes y responde con estrategia</title>
+    <link rel="canonical" href="https://alfii.ec/" />
+
+    <!-- Open Graph / Twitter -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="alfii" />
+    <meta property="og:locale" content="es_EC" />
+    <meta property="og:url" content="https://alfii.ec/" />
+    <meta property="og:title" content="alfii — Analiza sus mensajes y responde con estrategia" />
+    <meta
+      property="og:description"
+      content="Sube una captura de la conversación y alfii te dice qué está pasando de verdad y qué responder. Análisis con IA, privado y calibrado contigo."
+    />
+    <meta property="og:image" content="https://alfii.ec/og.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="alfii — Analiza sus mensajes y responde con estrategia" />
+    <meta
+      name="twitter:description"
+      content="Sube una captura de la conversación y alfii te dice qué está pasando de verdad y qué responder."
+    />
+    <meta name="twitter:image" content="https://alfii.ec/og.jpg" />
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "name": "alfii",
+  "url": "https://alfii.ec/",
+  "logo": "https://alfii.ec/logo-full.png",
+  "email": "team@alfii.ec",
+  "description": "Asesor privado con IA que analiza conversaciones y te ayuda a responder con estrategia."
+}
+    </script>
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "alfii",
+  "url": "https://alfii.ec/",
+  "applicationCategory": "LifestyleApplication",
+  "operatingSystem": "Web",
+  "inLanguage": "es",
+  "description": "Sube una captura de la conversación y alfii te dice qué está pasando de verdad y qué responder. Análisis con IA, expedientes privados y estrategia calibrada contigo.",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD",
+    "description": "La primera captura se analiza gratis y sin cuenta."
+  }
+}
+    </script>
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "¿Esto no es manipular a alguien?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. Alfii no te da trucos para forzar nada: te traduce lo que ya está escrito y te ayuda a responder desde tu propio marco. De hecho la mitad del análisis es un radar que te avisa cuando la que no te conviene es ella, o cuando el que se está saliendo del marco eres tú."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "¿Y si el análisis se equivoca?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Puede. Por eso cada bloque viene con su razonamiento y su porcentaje de confianza, no como una sentencia. Tú lees el argumento y decides. Un análisis que no explica su lógica no sirve para aprender, y la idea es que a los diez chats ya no nos necesites tanto."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "¿Quién puede ver mis capturas?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Solo tú. Quedan dentro de tu expediente privado, sin dirección pública, y se abren con enlaces firmados que caducan. Si borras una, desaparece también del almacenamiento."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "¿Tengo que crear una cuenta?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Para la primera captura no. Subes, ves el análisis completo y decides después. La cuenta solo hace falta si quieres guardar expedientes y que Alfii recuerde el historial de cada conversación."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "¿Funciona con Instagram, Tinder o Telegram?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Sí. Alfii lee la captura, no la app. Mientras el texto se vea, da igual de dónde venga."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "¿Para qué sirve la Auditoría inicial?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Para que los scripts suenen a ti y no a un guion genérico. Alfii necesita saber a qué te dedicas, qué buscas y cuáles son tus líneas rojas antes de poner palabras en tu boca. Son ocho bloques y se puede saltar lo que no quieras contar."
+      }
+    }
+  ]
+}
+    </script>
 
     <!-- Font Awesome 6.7.2 CDN -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
@@ -37,7 +148,66 @@
     </style>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <!-- Contenido pre-render: lo que ve un crawler (o un usuario sin JS) antes
+           de que Vue monte y lo reemplace. Es el mismo mensaje de la landing,
+           en HTML semantico plano — no es cloaking, es el fallback real. -->
+      <main>
+        <h1>Ella ya te dijo la verdad. alfii te la traduce.</h1>
+        <p>
+          alfii es tu asesor privado: subes una captura de la conversación
+          (WhatsApp, Instagram, Tinder o donde sea) y te dice qué está pasando
+          de verdad, qué te está probando y cuál es la jugada correcta antes de
+          responder. Ellas ya saben jugar el juego — alfii te enseña a jugarlo.
+        </p>
+        <section>
+          <h2>Cómo funciona</h2>
+          <p>
+            1) Sube una captura de la conversación. 2) alfii la analiza con IA:
+            arquetipo de la rival, subtexto, riesgo y nivel de interés, cada
+            bloque con su razonamiento y su porcentaje de confianza. 3) Sales
+            con la respuesta lista, escrita en tu propia voz. La primera captura
+            se analiza gratis y sin crear cuenta.
+          </p>
+        </section>
+        <section>
+          <h2>Privado por diseño</h2>
+          <p>
+            Tus capturas quedan en tu expediente privado, sin dirección pública
+            y con enlaces firmados que caducan. Si borras una, desaparece
+            también del almacenamiento. alfii nunca habla de tus conversaciones
+            por correo.
+          </p>
+        </section>
+        <section>
+          <h2>Preguntas frecuentes</h2>
+          <section>
+            <h3>¿Esto no es manipular a alguien?</h3>
+            <p>No. Alfii no te da trucos para forzar nada: te traduce lo que ya está escrito y te ayuda a responder desde tu propio marco. De hecho la mitad del análisis es un radar que te avisa cuando la que no te conviene es ella, o cuando el que se está saliendo del marco eres tú.</p>
+          </section>
+          <section>
+            <h3>¿Y si el análisis se equivoca?</h3>
+            <p>Puede. Por eso cada bloque viene con su razonamiento y su porcentaje de confianza, no como una sentencia. Tú lees el argumento y decides. Un análisis que no explica su lógica no sirve para aprender, y la idea es que a los diez chats ya no nos necesites tanto.</p>
+          </section>
+          <section>
+            <h3>¿Quién puede ver mis capturas?</h3>
+            <p>Solo tú. Quedan dentro de tu expediente privado, sin dirección pública, y se abren con enlaces firmados que caducan. Si borras una, desaparece también del almacenamiento.</p>
+          </section>
+          <section>
+            <h3>¿Tengo que crear una cuenta?</h3>
+            <p>Para la primera captura no. Subes, ves el análisis completo y decides después. La cuenta solo hace falta si quieres guardar expedientes y que Alfii recuerde el historial de cada conversación.</p>
+          </section>
+          <section>
+            <h3>¿Funciona con Instagram, Tinder o Telegram?</h3>
+            <p>Sí. Alfii lee la captura, no la app. Mientras el texto se vea, da igual de dónde venga.</p>
+          </section>
+          <section>
+            <h3>¿Para qué sirve la Auditoría inicial?</h3>
+            <p>Para que los scripts suenen a ti y no a un guion genérico. Alfii necesita saber a qué te dedicas, qué buscas y cuáles son tus líneas rojas antes de poner palabras en tu boca. Son ocho bloques y se puede saltar lo que no quieras contar.</p>
+          </section>
+        </section>
+      </main>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
