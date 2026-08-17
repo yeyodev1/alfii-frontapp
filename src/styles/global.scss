@@ -30,7 +30,11 @@ html, body {
   line-height: $lh-base;
   min-height: 100dvh;
   width: 100%;
-  overflow-x: hidden;
+  // clip y no hidden: `overflow-x: hidden` computa `overflow: hidden auto` y
+  // convierte a body en scroll container, lo que ROMPE todo position:sticky
+  // de la pagina (el film del hero se iba con el scroll dejando pantallas
+  // vacias). `clip` recorta el desborde lateral sin crear scroll container.
+  overflow-x: clip;
   -webkit-font-smoothing: antialiased;
 }
 
