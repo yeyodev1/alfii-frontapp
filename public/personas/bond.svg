@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#16233a"/>
+      <stop offset="1" stop-color="#0b111c"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9db8dd"/>
+      <stop offset="1" stop-color="#22344d"/>
+    </linearGradient>
+  </defs>
+  <rect width="300" height="300" fill="url(#bg)"/>
+  <!-- iris/aperture motif -->
+  <g opacity="0.22" stroke="#9db8dd" fill="none" stroke-width="2">
+    <circle cx="150" cy="150" r="132"/>
+    <circle cx="150" cy="150" r="112"/>
+  </g>
+  <!-- martini -->
+  <g opacity="0.85">
+    <path d="M232 96l32 0-16 22z" fill="#cfe0f2"/>
+    <rect x="247" y="118" width="2.5" height="26" fill="#cfe0f2"/>
+    <rect x="240" y="144" width="17" height="3" rx="1.5" fill="#cfe0f2"/>
+    <circle cx="243" cy="103" r="3.4" fill="#7fae6b"/>
+  </g>
+  <!-- bust silhouette -->
+  <path d="M150 62c-26 0-42 20-42 46 0 18 8 33 19 40l-4 14c-30 8-53 24-60 48-4 14 2 30 2 30h170s6-16 2-30c-7-24-30-40-60-48l-4-14c11-7 19-22 19-40 0-26-16-46-42-46z" fill="#0b0e14"/>
+  <path d="M150 62c-26 0-42 20-42 46 0 3 0 6 1 9 6-16 22-27 41-27s35 11 41 27c1-3 1-6 1-9 0-26-16-46-42-46z" fill="url(#rim)" opacity="0.45"/>
+  <!-- tux shirt -->
+  <path d="M132 168l18 16 18-16 8 8-26 26-26-26z" fill="#eef1f4"/>
+  <!-- bowtie -->
+  <path d="M150 186l-16-8v16l16-8 16 8v-16z" fill="#0b0e14"/>
+  <path d="M146 186a4 4 0 108 0 4 4 0 10-8 0z" fill="#0b0e14"/>
+  <!-- tux lapels satinados -->
+  <path d="M120 172l30 30-42 36-16-32z" fill="#101722"/>
+  <path d="M180 172l-30 30 42 36 16-32z" fill="#101722"/>
+  <path d="M120 172l30 30-8 7-30-29z" fill="#1b2736"/>
+  <path d="M180 172l-30 30 8 7 30-29z" fill="#1b2736"/>
+</svg>
