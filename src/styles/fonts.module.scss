@@ -6,16 +6,18 @@
 
 $font-principal: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
 
-// Escala tipografica
-$fs-2xs: 11px;
-$fs-xs:  12px;
-$fs-sm:  14px;
-$fs-base: 15px;
-$fs-md:  16px;
-$fs-lg:  18px;
-$fs-xl:  22px;
-$fs-2xl: 28px;
-$fs-3xl: 36px;
+// Escala tipografica. Subida global (2026-08-16): la base anterior (11-15px)
+// se leia pequeña en pantallas reales; los tamaños chicos suben mas que los
+// grandes para ganar legibilidad sin inflar los titulares.
+$fs-2xs: 13px;
+$fs-xs:  14px;
+$fs-sm:  16px;
+$fs-base: 17px;
+$fs-md:  18px;
+$fs-lg:  20px;
+$fs-xl:  24px;
+$fs-2xl: 30px;
+$fs-3xl: 38px;
 
 $lh-tight: 1.15;
 $lh-snug:  1.3;
