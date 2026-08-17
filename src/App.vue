@@ -24,7 +24,11 @@ const isFullWidthView = computed(() => {
   );
 });
 
-const showNav = computed(() => !isImmersive.value && route.path !== '/legal');
+// El landing ('/') tampoco lleva la barra de app: es una experiencia de venta
+// con su propia navegacion (navbar + CTAs) y la barra flotante la ensuciaba.
+const showNav = computed(
+  () => !isImmersive.value && route.path !== '/legal' && route.path !== '/'
+);
 
 /**
  * Transicion entre vistas con sentido de direccion.
