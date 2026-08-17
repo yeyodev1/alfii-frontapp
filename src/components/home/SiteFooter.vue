@@ -39,6 +39,9 @@ useGsapContext(({ mm }) => {
       </button>
 
       <nav class="footer-links">
+        <!-- Guías = páginas estáticas fuera del SPA: <a> normal, no RouterLink. -->
+        <a href="/guias/">Guías</a>
+        <span aria-hidden="true">·</span>
         <RouterLink to="/legal">Aviso Legal</RouterLink>
         <span aria-hidden="true">·</span>
         <RouterLink to="/legal">Términos</RouterLink>
