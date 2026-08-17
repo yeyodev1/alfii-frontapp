@@ -141,11 +141,22 @@ useGsapContext(() => {
     });
   }
 
-  // Al salir del hero el navbar deja de ser cabecera y se condensa.
+  // Header diferido: en el tope no existe (el hero ya trae su HUD y su CTA —
+  // otra barra ahi solo duplica). Aparece al primer gesto de scroll hacia
+  // ARRIBA dentro de la pagina y se retira en cuanto vuelves a bajar.
+  // Umbral: el final del film del hero. Dentro del film manda el HUD propio
+  // del hero (Jugador 1 + medidores); el header solo opera en las secciones.
+  const navEl = document.querySelector('.navbar');
+  const filmEnd = () => {
+    const film = document.querySelector<HTMLElement>('.film');
+    return film ? film.offsetTop + film.offsetHeight - window.innerHeight : 600;
+  };
   ScrollTrigger.create({
-    start: 80,
+    start: 0,
     end: 'max',
-    toggleClass: { targets: '.navbar', className: 'is-scrolled' },
+    onUpdate: (self) => {
+      navEl?.classList.toggle('is-on', self.scroll() > filmEnd() && self.direction === -1);
+    },
   });
 }, pageRef);
 </script>
@@ -158,10 +169,16 @@ useGsapContext(() => {
 
     <input ref="fileInput" type="file" accept="image/*" class="hidden-input" @change="handleFileSelected" />
 
+    <!-- Header HUD: sin barra que cruce la pantalla. El logo y las acciones
+         flotan como piezas de interfaz de juego sobre el film; al bajar se
+         retiran para dejar la escena limpia y vuelven con cualquier scroll
+         hacia arriba. -->
     <header class="navbar">
       <div class="navbar-inner">
-        <AlfiiLogo size="sm" mode="full" />
-        <div class="nav-actions">
+        <div class="brand-chip">
+          <span class="brand-word">alfii</span>
+        </div>
+        <div class="nav-dock">
           <RouterLink v-if="!authStore.user?.isAnonymous" to="/vault" class="nav-ghost">
             <BaseIcon name="vault" size="xs" color="cream" />
             <span class="only-desktop">Mis partidas</span>
@@ -256,47 +273,59 @@ useGsapContext(() => {
   box-shadow: 0 0 12px rgba($alfii-red, 0.8);
 }
 
+// Header HUD: dos piezas flotantes (marca y dock de acciones) en vez de una
+// barra. El fondo de la pagina respira entre ellas; el contenedor no captura
+// clicks — solo las piezas.
 .navbar {
-  position: sticky;
-  top: 0;
+  position: fixed;
+  top: 12px;
+  left: 0;
+  right: 0;
   z-index: 50;
-  width: 100%;
-  background-color: rgba($alfii-navy, 0.72);
-  backdrop-filter: blur(22px);
-  border-bottom: none;
-  transition: background-color $dur-base $ease-out, border-color $dur-base $ease-out,
-    box-shadow $dur-base $ease-out;
+  pointer-events: none;
+  // Estado de reposo: retirado. Solo baja cuando el usuario scrollea hacia
+  // arriba dentro de la pagina (clase .is-on desde ScrollTrigger).
+  transform: translateY(-130%);
+  opacity: 0;
+  transition: transform 0.45s $ease-out, opacity 0.35s $ease-out;
 
-  &.is-scrolled {
-    background-color: rgba($alfii-navy, 0.96);
-    border-bottom-color: rgba($alfii-cream, 0.14);
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.32);
-
-    .navbar-inner {
-      padding-top: 6px;
-      padding-bottom: 6px;
-    }
+  &.is-on {
+    transform: translateY(0);
+    opacity: 1;
   }
 
   .navbar-inner {
-    max-width: 1180px;
+    max-width: 1220px;
     margin: 0 auto;
-    padding: 8px clamp(16px, 4vw, 32px);
+    padding: 0 clamp(12px, 3vw, 28px);
     @include row(12px, center, space-between);
-    transition: padding $dur-base $ease-out;
   }
 
-  // Firma de partida: la costura inferior lleva el gradiente del cabezal.
-  &::after {
-    content: '';
-    position: absolute;
-    left: 0; right: 0; bottom: -1px;
-    height: 1px;
-    background: linear-gradient(90deg, rgba($alfii-red, 0.7), rgba($alfii-cream, 0.1) 45%, rgba($alfii-sage, 0.5));
-    pointer-events: none;
+  .brand-chip,
+  .nav-dock {
+    pointer-events: auto;
+    @include row(8px, center);
+    border-radius: 999px;
+    background-color: rgba($alfii-navy, 0.85);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba($alfii-cream, 0.16);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
   }
 
-  .nav-actions { @include row(8px, center); }
+  .brand-chip {
+    padding: 8px 18px;
+
+    .brand-word {
+      font-family: var(--font-display);
+      font-weight: 800;
+      font-size: 19px;
+      letter-spacing: -0.03em;
+      line-height: 1;
+      color: $alfii-cream;
+    }
+  }
+
+  .nav-dock { padding: 5px; }
 
   .only-desktop {
     display: none;
@@ -305,29 +334,34 @@ useGsapContext(() => {
 
   .nav-ghost {
     @include row(6px);
-    padding: 9px 12px;
-    border-radius: 11px;
+    padding: 8px 13px;
+    border-radius: 999px;
     font-size: $fs-xs;
     font-weight: $fw-semibold;
-    background-color: rgba($alfii-plum, 0.8);
-    border: 1px solid rgba($alfii-cream, 0.14);
-    transition: border-color $dur-fast $ease-out;
+    color: rgba($alfii-cream, 0.85);
+    transition: background-color $dur-fast $ease-out, color $dur-fast $ease-out;
 
-    &:hover { border-color: rgba($alfii-cream, 0.3); }
+    &:hover {
+      background-color: rgba($alfii-cream, 0.08);
+      color: $alfii-cream;
+    }
   }
 
   .nav-cta {
     @include row(6px);
-    padding: 9px 14px;
-    border-radius: 11px;
+    padding: 8px 16px;
+    border-radius: 999px;
     font-size: $fs-xs;
     font-weight: $fw-bold;
     background-color: $alfii-red;
     color: $alfii-cream;
-    box-shadow: 0 4px 16px rgba($alfii-red, 0.38);
-    transition: background-color $dur-fast $ease-out;
+    box-shadow: 0 4px 18px rgba($alfii-red, 0.45);
+    transition: background-color $dur-fast $ease-out, transform $dur-fast $ease-out;
 
-    &:hover { background-color: #ff1a40; }
+    &:hover {
+      background-color: #ff1a40;
+      transform: translateY(-1px);
+    }
   }
 }
 
