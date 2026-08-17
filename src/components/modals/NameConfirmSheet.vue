@@ -6,19 +6,32 @@ import { ref } from 'vue';
 const props = defineProps<{
   detectedName?: string;
   analysisId: string;
+  /**
+   * Callback y no emit: crear el expediente es una peticion al backend y la
+   * hoja necesita esperar su resultado para mostrar el estado de carga. Un
+   * emit se dispara y no devuelve nada; con el callback se hace await y el
+   * boton refleja la espera real.
+   */
+  onConfirm?: (name: string) => Promise<unknown> | void;
 }>();
 
 const emit = defineEmits<{
   (e: 'close'): void;
-  (e: 'confirm', name: string): void;
 }>();
 
 const name = ref(props.detectedName || '');
+const saving = ref(false);
 
-function handleConfirm() {
+async function handleConfirm() {
   const trimmed = name.value.trim();
-  if (trimmed) {
-    emit('confirm', trimmed);
+  if (!trimmed || saving.value) return;
+  saving.value = true;
+  try {
+    await props.onConfirm?.(trimmed);
+  } finally {
+    // Si todo salio bien la hoja ya se cerro; si fallo, queda lista para
+    // reintentar en vez de con un spinner eterno.
+    saving.value = false;
   }
 }
 </script>
@@ -46,6 +59,7 @@ function handleConfirm() {
           placeholder="Ej. Sofi, Maria..."
           maxlength="60"
           autofocus
+          :disabled="saving"
           @keyup.enter="handleConfirm"
         />
       </div>
@@ -59,10 +73,12 @@ function handleConfirm() {
 
       <button
         class="confirm-btn"
-        :disabled="!name.trim()"
+        :class="{ saving }"
+        :disabled="!name.trim() || saving"
         @click="handleConfirm"
       >
-        Crear expediente
+        <BaseIcon v-if="saving" name="spinner" spin size="sm" color="plum" />
+        <span>{{ saving ? 'Creando expediente...' : 'Crear expediente' }}</span>
       </button>
     </div>
   </BaseSheet>
@@ -142,6 +158,7 @@ function handleConfirm() {
 }
 
 .confirm-btn {
+  @include row(8px, center, center);
   width: 100%;
   padding: 16px;
   background-color: $alfii-sage;
@@ -152,6 +169,13 @@ function handleConfirm() {
 
   &:disabled {
     opacity: 0.5;
+  }
+
+  // Cargando se ve activo, no apagado: el usuario debe leer "trabajando",
+  // no "boton roto".
+  &.saving {
+    opacity: 0.85;
+    cursor: wait;
   }
 }
 </style>
