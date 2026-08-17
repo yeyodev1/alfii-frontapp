@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#123528"/>
+      <stop offset="1" stop-color="#101820"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5fd0a5"/>
+      <stop offset="1" stop-color="#1f6e5c"/>
+    </linearGradient>
+  </defs>
+  <rect width="300" height="300" fill="url(#bg)"/>
+  <!-- warm sun -->
+  <circle cx="228" cy="74" r="40" fill="#e8c66a" opacity="0.28"/>
+  <circle cx="228" cy="74" r="24" fill="#e8c66a" opacity="0.35"/>
+  <!-- heart-read lines -->
+  <path d="M40 84c10-14 26-14 34 0 8-14 24-14 34 0-10 20-34 34-34 34S50 104 40 84z" fill="#5fd0a5" opacity="0.25" transform="scale(0.6) translate(30 30)"/>
+  <!-- bust silhouette -->
+  <path d="M150 62c-26 0-42 20-42 46 0 18 8 33 19 40l-4 14c-30 8-53 24-60 48-4 14 2 30 2 30h170s6-16 2-30c-7-24-30-40-60-48l-4-14c11-7 19-22 19-40 0-26-16-46-42-46z" fill="#0b0e14"/>
+  <path d="M150 62c-26 0-42 20-42 46 0 3 0 6 1 9 6-16 22-27 41-27s35 11 41 27c1-3 1-6 1-9 0-26-16-46-42-46z" fill="url(#rim)" opacity="0.5"/>
+  <!-- open collar shirt, relajado -->
+  <path d="M124 168l26 26 26-26 14 10-40 40-40-40z" fill="#dfe8e2"/>
+  <path d="M150 194v46" stroke="#b9c9bf" stroke-width="3"/>
+  <!-- casual blazer -->
+  <path d="M112 176l38 36-40 34-18-34z" fill="#17251f"/>
+  <path d="M188 176l-38 36 40 34 18-34z" fill="#17251f"/>
+</svg>
