@@ -297,6 +297,10 @@ function openMerge(group: VaultTarget[]) {
             <BaseIcon name="history" size="xs" color="muted" />
             {{ relativeActivity(t.lastMessageAt) }}
           </span>
+          <span v-if="t.herProfile?.instagram" class="tag tag-ig">
+            <BaseIcon name="platform.instagram" size="xs" color="muted" />
+            @{{ t.herProfile.instagram }}
+          </span>
         </div>
 
         <div class="card-track">
@@ -595,6 +599,13 @@ function openMerge(group: VaultTarget[]) {
     color: $alfii-sage;
     background-color: rgba($alfii-sage, 0.1);
     font-weight: $fw-semibold;
+  }
+
+  .tag-ig {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 160px;
   }
 }
 
