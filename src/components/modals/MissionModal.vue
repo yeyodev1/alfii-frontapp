@@ -76,21 +76,27 @@ onMounted(() => {
         .from(backdrop.value, { opacity: 0, duration: 0.25 }, 0)
         .from(
           panel.value,
-          { yPercent: 100, duration: 0.55, ease: 'back.out(1.05)' },
+          { yPercent: -100, duration: 0.55, ease: 'back.out(1.05)' },
           0.02
         )
         // Los segmentos se llenan uno a uno: se lee como progreso ganado, no
         // como una barra que ya estaba ahi.
+        // clearProps en cada .from: el tween posicionado pone opacity 0 en el
+        // instante en que se crea el timeline. Si algo lo interrumpe (remount
+        // por `sending`, revert a destiempo), los nodos se quedaban invisibles
+        // ocupando su espacio: un panel alto y "vacio" con las opciones dentro.
+        // Al terminar cada tween se limpia el estilo inline y el nodo queda
+        // gobernado solo por el CSS, que siempre es visible.
         .from('.pip.done', { scaleX: 0, transformOrigin: '0 50%', duration: 0.3, stagger: 0.05 }, 0.3)
-        .from('.mission-recall', { opacity: 0, x: -14, duration: 0.4 }, 0.35)
-        .from('.mission-title', { opacity: 0, y: 18, duration: 0.45 }, 0.4)
-        .from('.mission-ask', { opacity: 0, y: 14, duration: 0.4 }, 0.46)
+        .from('.mission-recall', { opacity: 0, x: -14, duration: 0.4, clearProps: 'opacity,transform' }, 0.35)
+        .from('.mission-title', { opacity: 0, y: 18, duration: 0.45, clearProps: 'opacity,transform' }, 0.4)
+        .from('.mission-ask', { opacity: 0, y: 14, duration: 0.4, clearProps: 'opacity,transform' }, 0.46)
         .from(
           '.mission-option',
-          { opacity: 0, x: 26, duration: 0.45, stagger: 0.06 },
+          { opacity: 0, x: 26, duration: 0.45, stagger: 0.06, clearProps: 'opacity,transform' },
           0.5
         )
-        .from('.mission-foot', { opacity: 0, y: 14, duration: 0.4 }, 0.62);
+        .from('.mission-foot', { opacity: 0, y: 14, duration: 0.4, clearProps: 'opacity,transform' }, 0.62);
     }, panel.value ?? undefined);
   });
 });
@@ -130,7 +136,7 @@ function choose(label: string) {
       tl.to(others, { opacity: 0.18, scale: 0.97, duration: 0.2 }, 0);
     }
 
-    tl.to(panel.value, { yPercent: 100, duration: 0.32, ease: 'power2.in' }, 0.22).to(
+    tl.to(panel.value, { yPercent: -100, duration: 0.32, ease: 'power2.in' }, 0.22).to(
       backdrop.value,
       { opacity: 0, duration: 0.25 },
       0.24
@@ -221,18 +227,21 @@ function choose(label: string) {
 </template>
 
 <style lang="scss" scoped>
+// Cae desde ARRIBA, como una notificacion, y compacto: el chat es el
+// protagonista y el panel solo viene a indicar algo. Anclado abajo se leia
+// como una pantalla nueva que enterraba la conversacion.
 .mission-backdrop {
   position: fixed;
   inset: 0;
   z-index: 90;
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: center;
   padding: 0;
   // Se ve el chat detras a proposito: el panel es la pregunta actual, no una
   // pantalla nueva. El usuario no pierde de vista donde esta.
   background: radial-gradient(
-    120% 80% at 50% 100%,
+    120% 80% at 50% 0%,
     rgba($alfii-navy, 0.92) 0%,
     rgba($alfii-navy, 0.72) 60%,
     rgba($alfii-navy, 0.55) 100%
@@ -244,16 +253,16 @@ function choose(label: string) {
   position: relative;
   width: 100%;
   max-width: 520px;
-  max-height: 88dvh;
+  max-height: 76dvh;
   @include stack(0);
   overflow: hidden;
-  border-radius: 26px 26px 0 0;
+  border-radius: 0 0 26px 26px;
   border: 1px solid rgba($alfii-cream, 0.14);
-  border-bottom: none;
+  border-top: none;
   background:
     radial-gradient(90% 60% at 50% 0%, rgba($alfii-red, 0.16) 0%, transparent 70%),
     linear-gradient(180deg, rgba($alfii-plum, 0.99) 0%, rgba($alfii-navy, 0.99) 100%);
-  box-shadow: 0 -18px 60px rgba(0, 0, 0, 0.55), 0 0 40px rgba($alfii-red, 0.14);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55), 0 0 40px rgba($alfii-red, 0.14);
   // La entrada y la salida las lleva GSAP desde el script. En CSS quedaba una
   // animacion de entrada y otra de confirmacion peleandose por el transform del
   // mismo nodo, que es la receta para que una de las dos se pierda a medias.
@@ -263,7 +272,8 @@ function choose(label: string) {
 .mission-head {
   flex: 0 0 auto;
   @include stack(9px);
-  padding: 16px 20px 12px;
+  // Respeta el notch: ahora el panel cuelga del borde superior del viewport.
+  padding: max(16px, env(safe-area-inset-top)) 20px 12px;
   border-bottom: 1px solid rgba($alfii-cream, 0.07);
 
   .head-line {
@@ -416,8 +426,7 @@ function choose(label: string) {
 .mission-foot {
   flex: 0 0 auto;
   @include stack(10px);
-  padding: 12px 20px;
-  padding-bottom: max(14px, env(safe-area-inset-bottom));
+  padding: 12px 20px 14px;
   border-top: 1px solid rgba($alfii-cream, 0.07);
   background-color: rgba($alfii-navy, 0.45);
 }
