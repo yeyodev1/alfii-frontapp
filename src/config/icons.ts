@@ -50,6 +50,8 @@ export const ICON_MAP = {
   plus: "fa-solid fa-plus",
   upload: "fa-solid fa-cloud-arrow-up",
   camera: "fa-solid fa-camera",
+  mic: "fa-solid fa-microphone-lines",
+  audio: "fa-solid fa-volume-high",
   image: "fa-solid fa-image",
   folder: "fa-solid fa-folder-open",
   history: "fa-solid fa-clock-rotate-left",

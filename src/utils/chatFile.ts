@@ -10,13 +10,19 @@ import { unzipSync, strFromU8 } from 'fflate';
 
 export const MAX_CHAT_BYTES = 2 * 1024 * 1024;
 
-export type DropKind = 'image' | 'chat' | 'unknown';
+export type DropKind = 'image' | 'chat' | 'audio' | 'unknown';
+
+/** Vercel corta el body en 4.5 MB: un opus de WhatsApp de 10 min pesa ~1 MB. */
+export const MAX_AUDIO_BYTES = 4 * 1024 * 1024;
+const AUDIO_EXT = /\.(opus|ogg|oga|m4a|mp4|aac|mp3|wav|webm|flac|amr)$/i;
 
 /** Clasifica un archivo (o un item de dataTransfer) sin leerlo. */
 export function classifyFile(file: { name?: string; type?: string }): DropKind {
   const type = file.type || '';
   const name = (file.name || '').toLowerCase();
   if (type.startsWith('image/')) return 'image';
+  if (type.startsWith('audio/') || type === 'application/ogg' || type === 'video/webm') return 'audio';
+  if (AUDIO_EXT.test(name)) return 'audio';
   if (type === 'text/plain' || type === 'application/zip' || type === 'application/x-zip-compressed') return 'chat';
   if (name.endsWith('.txt') || name.endsWith('.zip')) return 'chat';
   return 'unknown';

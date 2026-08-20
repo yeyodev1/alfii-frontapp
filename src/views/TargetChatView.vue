@@ -9,7 +9,7 @@ import { ref, computed, onMounted, nextTick, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '@/services/http';
 import { useModal } from '@/composables/useModal';
-import { classifyFile, type DropKind } from '@/utils/chatFile';
+import { classifyFile, MAX_AUDIO_BYTES, type DropKind } from '@/utils/chatFile';
 
 import { useToastStore } from '@/stores/toast';
 
@@ -179,6 +179,56 @@ async function analyzeScreenshot(file: File) {
 }
 
 // ---------------------------------------------------------------------------
+// Notas de voz: solo transcripcion. El texto entra al hilo como mensaje del
+// usuario y desde ahi Alfii lo tiene en contexto si le preguntan por el.
+// ---------------------------------------------------------------------------
+const audioInput = ref<HTMLInputElement | null>(null);
+const transcribing = ref(false);
+
+function triggerAudio() {
+  audioInput.value?.click();
+}
+
+async function handleAudioSelected(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (file) await transcribeAudio(file);
+  input.value = '';
+}
+
+async function transcribeAudio(file: File) {
+  if (file.size > MAX_AUDIO_BYTES) {
+    toastStore.show('Ese audio pesa más de 4 MB. Recórtalo o sube uno más corto.', 'error');
+    return;
+  }
+  transcribing.value = true;
+  // Burbuja provisional: el usuario ve que el audio entro y que se esta
+  // trabajando, sin esperar en blanco.
+  const placeholder = { _id: `tmp-${Date.now()}`, role: 'user', kind: 'audio', content: '', pending: true, fileName: file.name };
+  messages.value.push(placeholder);
+  scrollToBottom();
+  try {
+    const formData = new FormData();
+    formData.append('audio', file, file.name);
+    const res: any = await api.post(`/targets/${targetId}/transcribe`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    const idx = messages.value.indexOf(placeholder);
+    const done = { ...res.message, fileName: file.name };
+    if (idx >= 0) messages.value.splice(idx, 1, done);
+    else messages.value.push(done);
+    toastStore.show('Audio transcrito. Ya está en el hilo.', 'success');
+  } catch (err: any) {
+    const idx = messages.value.indexOf(placeholder);
+    if (idx >= 0) messages.value.splice(idx, 1);
+    toastStore.show(err.message || 'No pude transcribir ese audio.', 'error');
+  } finally {
+    transcribing.value = false;
+    scrollToBottom();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Arrastrar y soltar sobre TODO el chat.
 //
 // Una captura se analiza al instante; un .txt/.zip de WhatsApp abre la hoja de
@@ -212,7 +262,7 @@ function onDragEnter(e: DragEvent) {
 function onDragOver(e: DragEvent) {
   if (!hasFiles(e.dataTransfer)) return;
   e.preventDefault();
-  if (e.dataTransfer) e.dataTransfer.dropEffect = sending.value ? 'none' : 'copy';
+  if (e.dataTransfer) e.dataTransfer.dropEffect = sending.value || transcribing.value ? 'none' : 'copy';
 }
 
 function onDragLeave(e: DragEvent) {
@@ -224,7 +274,7 @@ async function onDrop(e: DragEvent) {
   if (!hasFiles(e.dataTransfer)) return;
   e.preventDefault();
   dragDepth.value = 0;
-  if (sending.value) return;
+  if (sending.value || transcribing.value) return;
   const file = e.dataTransfer?.files?.[0];
   if (!file) return;
   const kind = classifyFile(file);
@@ -232,15 +282,18 @@ async function onDrop(e: DragEvent) {
     await analyzeScreenshot(file);
   } else if (kind === 'chat') {
     openImport(file);
+  } else if (kind === 'audio') {
+    await transcribeAudio(file);
   } else {
-    toastStore.show('Suelta una captura (imagen) o el chat exportado de WhatsApp (.txt / .zip).', 'error');
+    toastStore.show('Suelta una captura, un audio o el chat exportado de WhatsApp (.txt / .zip).', 'error');
   }
 }
 
 const DROP_COPY: Record<DropKind, { title: string; sub: string; icon: string }> = {
   image: { title: 'Suelta la captura', sub: 'Alfii la lee y te dice qué responder.', icon: 'camera' },
   chat: { title: 'Suelta el chat de WhatsApp', sub: 'Importa la conversación completa al expediente.', icon: 'platform.whatsapp' },
-  unknown: { title: 'Suelta para analizar', sub: 'Una captura o el .txt / .zip exportado de WhatsApp.', icon: 'upload' },
+  audio: { title: 'Suelta la nota de voz', sub: 'Alfii la transcribe y la deja en el hilo. Solo transcribe.', icon: 'mic' },
+  unknown: { title: 'Suelta para analizar', sub: 'Una captura, un audio o el .txt / .zip de WhatsApp.', icon: 'upload' },
 };
 const dropCopy = computed(() => DROP_COPY[dragKind.value]);
 
@@ -372,6 +425,7 @@ async function sendTextMessage() {
           <p>{{ dropCopy.sub }}</p>
           <div class="drop-chips">
             <span :class="{ on: dragKind === 'image' }"><BaseIcon name="camera" size="xs" color="cream" /> Captura</span>
+            <span :class="{ on: dragKind === 'audio' }"><BaseIcon name="mic" size="xs" color="cream" /> Nota de voz</span>
             <span :class="{ on: dragKind === 'chat' }"><BaseIcon name="platform.whatsapp" size="xs" color="cream" /> Chat .txt / .zip</span>
           </div>
         </div>
@@ -387,6 +441,13 @@ async function sendTextMessage() {
       accept="image/*"
       class="hidden-input"
       @change="handleFileSelected"
+    />
+    <input
+      ref="audioInput"
+      type="file"
+      accept="audio/*,.opus,.ogg,.m4a,.mp3,.wav,.webm,.aac"
+      class="hidden-input"
+      @change="handleAudioSelected"
     />
 
     <!-- Header de la chica -->
@@ -469,6 +530,19 @@ async function sendTextMessage() {
           <AnalysisCard :analysis="msg.analysisId?.payload || msg.analysis" collapsible />
         </div>
 
+        <!-- Nota de voz transcrita: solo texto, sin analisis -->
+        <div v-else-if="msg.kind === 'audio'" class="audio-msg" :class="{ pending: msg.pending }">
+          <div class="audio-head">
+            <span class="audio-icon">
+              <BaseIcon :name="msg.pending ? 'spinner' : 'mic'" :spin="msg.pending" size="sm" color="cream" />
+            </span>
+            <span class="audio-label">{{ msg.pending ? 'Transcribiendo nota de voz…' : 'Nota de voz transcrita' }}</span>
+            <span v-if="!msg.pending" class="audio-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+          </div>
+          <p v-if="!msg.pending" class="audio-text">{{ msg.content }}</p>
+          <p v-else class="audio-skeleton"><span></span><span></span><span></span></p>
+        </div>
+
         <!-- Texto normal o saludo -->
         <template v-else>
           <span v-if="msg.role === 'alfii'" class="alfii-mark desktop-only">a</span>
@@ -503,6 +577,15 @@ async function sendTextMessage() {
         @click="openImport()"
       >
         <BaseIcon name="platform.whatsapp" size="base" color="cream" />
+      </button>
+
+      <button
+        class="upload-btn"
+        title="Subir nota de voz (solo transcribe)"
+        :disabled="sending || transcribing"
+        @click="triggerAudio"
+      >
+        <BaseIcon :name="transcribing ? 'spinner' : 'mic'" :spin="transcribing" size="base" color="cream" />
       </button>
 
       <textarea
@@ -838,6 +921,89 @@ $reading-width: 860px;
   }
 }
 
+
+// Burbuja de nota de voz transcrita (lado usuario)
+.audio-msg {
+  max-width: min(78%, 520px);
+  padding: 12px 14px 12px;
+  border-radius: 18px 18px 6px 18px;
+  background: linear-gradient(160deg, rgba(#e0b15a, 0.18), rgba($alfii-plum, 0.9));
+  border: 1px solid rgba(#e0b15a, 0.35);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
+  animation: fadeInUp $dur-base $ease-out both;
+
+  &.pending { border-style: dashed; }
+
+  .audio-head {
+    @include row(8px, center);
+    margin-bottom: 6px;
+  }
+
+  .audio-icon {
+    @include center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background-color: rgba(#e0b15a, 0.3);
+    flex-shrink: 0;
+  }
+
+  .audio-label {
+    font-size: $fs-2xs;
+    font-weight: $fw-bold;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #e0b15a;
+  }
+
+  .audio-bars {
+    @include row(2px, flex-end);
+    height: 14px;
+    margin-left: auto;
+
+    i {
+      display: block;
+      width: 3px;
+      border-radius: 2px;
+      background-color: rgba(#e0b15a, 0.8);
+      animation: audioBar 1.1s $ease-in-out infinite;
+      @for $i from 1 through 5 {
+        &:nth-child(#{$i}) { height: #{4 + ($i % 3) * 4}px; animation-delay: #{$i * 0.12}s; }
+      }
+    }
+  }
+
+  .audio-text {
+    font-size: $fs-sm;
+    line-height: $lh-relaxed;
+    color: $alfii-cream;
+    white-space: pre-wrap;
+  }
+
+  .audio-skeleton {
+    @include stack(6px);
+    span {
+      display: block;
+      height: 10px;
+      border-radius: 6px;
+      background: linear-gradient(90deg, rgba($alfii-cream, 0.08), rgba($alfii-cream, 0.2), rgba($alfii-cream, 0.08));
+      background-size: 200% 100%;
+      animation: shimmer 1.4s linear infinite;
+      &:nth-child(2) { width: 85%; }
+      &:nth-child(3) { width: 60%; }
+    }
+  }
+}
+
+@keyframes audioBar {
+  0%, 100% { transform: scaleY(0.5); }
+  50% { transform: scaleY(1.3); }
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 // ---------------------------------------------------------------------------
 // Overlay de arrastrar y soltar
 // ---------------------------------------------------------------------------
@@ -870,6 +1036,7 @@ $reading-width: 860px;
 
   &.kind-image { border-color: $alfii-red; }
   &.kind-chat { border-color: $alfii-sage; }
+  &.kind-audio { border-color: #e0b15a; }
 
   .drop-ring {
     position: absolute;
