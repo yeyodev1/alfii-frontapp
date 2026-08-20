@@ -4,7 +4,8 @@ import AnalysisCard from '@/components/shared/AnalysisCard.vue';
 import RiskBadge from '@/components/shared/RiskBadge.vue';
 import HerProfileCard from '@/components/shared/HerProfileCard.vue';
 import ImportSheet from '@/components/modals/ImportSheet.vue';
-import { ref, onMounted, nextTick } from 'vue';
+import ExpedienteSidebar from '@/components/shared/ExpedienteSidebar.vue';
+import { ref, computed, onMounted, nextTick, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '@/services/http';
 import { useModal } from '@/composables/useModal';
@@ -12,7 +13,9 @@ import { useModal } from '@/composables/useModal';
 import { useToastStore } from '@/stores/toast';
 
 const route = useRoute();
-const targetId = (Array.isArray(route.params.id) ? route.params.id[0] : route.params.id) || '';
+// Reactivo: el sidebar navega entre /chat/:id reutilizando esta misma vista.
+const routeId = computed(() => (Array.isArray(route.params.id) ? route.params.id[0] : route.params.id) || '');
+let targetId = routeId.value;
 
 const target = ref<any | null>(null);
 const messages = ref<any[]>([]);
@@ -41,7 +44,11 @@ function scrollToBottom() {
   });
 }
 
-onMounted(async () => {
+async function loadExpediente() {
+  targetId = routeId.value;
+  target.value = null;
+  messages.value = [];
+  showProfile.value = false;
   try {
     const resTarget: any = await api.get(`/targets/${targetId}`);
     target.value = resTarget.target;
@@ -64,7 +71,48 @@ onMounted(async () => {
   } catch (err: any) {
     toastStore.show(err.message || 'Error al cargar expediente', 'error');
   }
+}
+
+onMounted(loadExpediente);
+watch(routeId, (id, prev) => {
+  if (id && id !== prev) void loadExpediente();
 });
+
+const STAGE_LABELS: Record<string, string> = {
+  APERTURA: 'Apertura',
+  CALIBRACION: 'Calibrando',
+  ESCALADA: 'Escalando',
+  CITA_AGENDADA: 'Cita agendada',
+  POST_CITA: 'Después de la cita',
+  ENFRIADO: 'Enfriado',
+  CERRADO: 'Cerrado',
+};
+
+/** Cambios de expediente que el backend guardo en el turno: se muestran como
+ *  chip de sistema, no como burbuja de Alfii. */
+const CHANGE_LABELS: Record<string, string> = {
+  stage: 'etapa',
+  meters: 'medidores',
+  archetype: 'arquetipo',
+  riskFlag: 'red flag',
+  riskLevel: 'nivel de riesgo',
+  'herProfile.herAge': 'edad',
+  'herProfile.herOccupation': 'ocupación',
+  'herProfile.instagram': 'instagram',
+  'herProfile.howWeMet': 'cómo se conocieron',
+  'herProfile.knownSinceMonths': 'tiempo conociéndose',
+  'herProfile.relationshipGoal': 'objetivo',
+  'herProfile.notes': 'notas',
+};
+
+function changeLabel(content: string): string {
+  const labels = String(content || '')
+    .split(',')
+    .map((f) => f.trim())
+    .filter(Boolean)
+    .map((f) => CHANGE_LABELS[f] || f.replace(/^herProfile\./, ''));
+  return labels.length ? labels.join(', ') : 'expediente';
+}
 
 function triggerUpload() {
   fileInput.value?.click();
@@ -232,6 +280,9 @@ async function sendTextMessage() {
 
 <template>
   <div class="target-chat-view">
+    <ExpedienteSidebar class="desktop-only" :active-id="targetId" />
+
+    <div class="chat-column">
     <input
       ref="fileInput"
       type="file"
@@ -246,17 +297,31 @@ async function sendTextMessage() {
         <BaseIcon name="back" size="sm" color="cream" />
       </RouterLink>
 
+      <span class="header-avatar desktop-only" :class="`accent-${target.accentColor || 'red'}`">
+        {{ target.avatarInitial || String(target.displayName || '?').charAt(0).toUpperCase() }}
+      </span>
+
       <!-- Tappable: abre/cierra la ficha de ella sin salir del chat -->
       <button class="target-info" type="button" @click="showProfile = !showProfile">
         <h3>{{ target.displayName }}</h3>
         <div class="sub-row">
           <span class="arq" v-if="target.archetype">{{ target.archetype.label }}</span>
-          <span class="stage">{{ target.stage }}</span>
+          <span class="sep" v-if="target.archetype">·</span>
+          <span class="stage">{{ STAGE_LABELS[target.stage] || target.stage }}</span>
+          <template v-if="target.herProfile?.herAge">
+            <span class="sep">·</span>
+            <span class="stage">{{ target.herProfile.herAge }} años</span>
+          </template>
           <BaseIcon :name="showProfile ? 'arrowUp' : 'arrowRight'" size="xs" color="muted" />
         </div>
       </button>
 
-      <RiskBadge :level="(target.risk?.level as any) || 'LIMPIO'" />
+      <div class="header-actions">
+        <RiskBadge :level="(target.risk?.level as any) || 'LIMPIO'" />
+        <button class="profile-btn desktop-only" type="button" @click="showProfile = !showProfile">
+          {{ showProfile ? 'Cerrar ficha' : 'Ficha de ella' }}
+        </button>
+      </div>
     </header>
 
     <!-- Ficha de ella: colapsable bajo el header -->
@@ -272,14 +337,21 @@ async function sendTextMessage() {
 
     <!-- Hilo de mensajes -->
     <div ref="chatContainer" class="chat-thread">
+      <div class="thread-inner">
       <div
         v-for="(msg, idx) in messages"
-        :key="idx"
+        :key="msg._id || idx"
         class="msg-row"
-        :class="msg.role"
+        :class="[msg.role, { system: msg.kind === 'stateChange' }]"
       >
+        <!-- Cambio de expediente: chip de sistema, no burbuja -->
+        <span v-if="msg.kind === 'stateChange'" class="state-chip">
+          <BaseIcon name="check" size="xs" color="sage" />
+          Expediente actualizado · {{ changeLabel(msg.content) }}
+        </span>
+
         <!-- Captura subida: queda en el hilo junto a su analisis -->
-        <div v-if="msg.kind === 'screenshot' && msg.imageUrl" class="screenshot-msg">
+        <div v-else-if="msg.kind === 'screenshot' && msg.imageUrl" class="screenshot-msg">
           <img :src="msg.imageUrl" alt="Captura analizada" loading="lazy" />
         </div>
 
@@ -289,22 +361,28 @@ async function sendTextMessage() {
         </div>
 
         <!-- Texto normal o saludo -->
-        <div v-else class="text-bubble" :class="{ truncated: msg.truncated }">
-          <p>{{ msg.content }}</p>
-          <span v-if="msg.truncated" class="truncated-note">Respuesta cortada · pídele que continúe</span>
-        </div>
+        <template v-else>
+          <span v-if="msg.role === 'alfii'" class="alfii-mark desktop-only">a</span>
+          <div class="text-bubble" :class="{ truncated: msg.truncated }">
+            <p>{{ msg.content }}</p>
+            <span v-if="msg.truncated" class="truncated-note">Respuesta cortada · pídele que continúe</span>
+          </div>
+        </template>
       </div>
 
       <div v-if="sending" class="msg-row alfii">
+        <span class="alfii-mark desktop-only">a</span>
         <div class="text-bubble typing">
           <BaseIcon name="thinking" size="sm" color="red" spin />
           <span>Alfii está leyendo...</span>
         </div>
       </div>
+      </div>
     </div>
 
     <!-- Input bar -->
     <footer class="input-bar">
+      <div class="input-inner">
       <button class="upload-btn" @click="triggerUpload" :disabled="sending">
         <BaseIcon name="camera" size="base" color="cream" />
       </button>
@@ -332,20 +410,38 @@ async function sendTextMessage() {
       >
         <BaseIcon name="arrowUp" size="sm" color="cream" />
       </button>
+      </div>
     </footer>
+    </div>
   </div>
 </template>
 
 <style lang="scss" scoped>
 .target-chat-view {
-  @include stack(0);
+  @include row(0, stretch);
   height: 100dvh;
   width: 100%;
 }
 
-// En escritorio el chat ocupa toda la pantalla; el ancho de lectura lo
-// controlan las burbujas (max-width en ch), no un contenedor estrecho.
-$chat-pad: clamp(16px, 4vw, 64px);
+// Sidebar de expedientes solo en escritorio. En movil el flujo es
+// Boveda -> expediente con el boton de volver del header.
+.desktop-only { display: none !important; }
+
+@media (min-width: 1024px) {
+  .desktop-only { display: flex !important; }
+  .target-header .back-btn { display: none; }
+}
+
+.chat-column {
+  @include stack(0);
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+}
+
+// Padding lateral del chat; el ancho de lectura lo fija .thread-inner.
+$chat-pad: clamp(16px, 3vw, 32px);
+$reading-width: 860px;
 
 .hidden-input { display: none; }
 
@@ -358,6 +454,40 @@ $chat-pad: clamp(16px, 4vw, 64px);
   border-bottom: 1px solid rgba($alfii-cream, 0.08);
 
   .back-btn { padding: 6px; }
+
+  .header-avatar {
+    @include center;
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    font-weight: $fw-bold;
+    font-size: $fs-md;
+    color: $alfii-cream;
+    &.accent-red { background-color: rgba($alfii-red, 0.3); border: 1px solid $alfii-red; }
+    &.accent-sage { background-color: rgba($alfii-sage, 0.3); border: 1px solid $alfii-sage; }
+    &.accent-cream { background-color: rgba($alfii-cream, 0.2); border: 1px solid $alfii-cream; }
+    &.accent-plum { background-color: rgba($alfii-plum, 0.9); border: 1px solid rgba($alfii-cream, 0.2); }
+    &.accent-navy { background-color: rgba($alfii-navy, 0.8); border: 1px solid rgba($alfii-cream, 0.2); }
+  }
+
+  .header-actions {
+    @include row(10px, center);
+  }
+
+  .profile-btn {
+    @include row(8px, center);
+    padding: 9px 14px;
+    border-radius: 12px;
+    background-color: rgba($alfii-navy, 0.6);
+    border: 1px solid rgba($alfii-cream, 0.14);
+    color: $alfii-cream;
+    font-size: $fs-xs;
+    font-weight: $fw-semibold;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: border-color $dur-fast $ease-out;
+    &:hover { border-color: rgba($alfii-cream, 0.3); }
+  }
 
   .target-info {
     flex: 1;
@@ -372,6 +502,7 @@ $chat-pad: clamp(16px, 4vw, 64px);
       font-size: $fs-2xs;
       color: rgba($alfii-cream, 0.6);
       .arq { color: $alfii-sage; font-weight: $fw-bold; }
+      .sep { color: rgba($alfii-cream, 0.35); }
     }
   }
 }
@@ -391,12 +522,25 @@ $chat-pad: clamp(16px, 4vw, 64px);
   min-height: 0;
   @include scroll-y;
   padding: 16px $chat-pad;
-  @include stack(12px);
 
   @media (min-width: 1024px) {
-    padding-top: 24px;
-    padding-bottom: 24px;
+    padding-top: 28px;
+    padding-bottom: 28px;
   }
+}
+
+.thread-inner {
+  @include stack(12px);
+  width: 100%;
+  max-width: $reading-width;
+  margin: 0 auto;
+
+  @media (min-width: 1024px) { gap: 14px; }
+}
+
+.profile-panel > * {
+  max-width: $reading-width;
+  margin: 0 auto;
 }
 
 .msg-row {
@@ -408,15 +552,46 @@ $chat-pad: clamp(16px, 4vw, 64px);
       background-color: rgba($alfii-red, 0.2);
       border: 1px solid rgba($alfii-red, 0.4);
       color: $alfii-cream;
+      border-bottom-right-radius: 4px;
+    }
+  }
+
+  &.system {
+    justify-content: center;
+    .state-chip {
+      @include row(6px, center);
+      padding: 5px 12px;
+      border-radius: 999px;
+      background-color: rgba($alfii-sage, 0.12);
+      border: 1px solid rgba($alfii-sage, 0.3);
+      color: $alfii-sage;
+      font-size: 12px;
+      font-weight: $fw-semibold;
     }
   }
 
   &.alfii {
     justify-content: flex-start;
+    align-items: flex-end;
+    gap: 10px;
+
+    .alfii-mark {
+      @include center;
+      flex: 0 0 28px;
+      width: 28px;
+      height: 28px;
+      border-radius: 9px;
+      background-color: $alfii-red;
+      color: $alfii-cream;
+      font-weight: $fw-extrabold;
+      font-size: 15px;
+    }
+
     .text-bubble {
       background-color: $alfii-plum;
       border: 1px solid rgba($alfii-cream, 0.1);
       color: $alfii-cream;
+      border-bottom-left-radius: 4px;
     }
   }
 
@@ -427,8 +602,9 @@ $chat-pad: clamp(16px, 4vw, 64px);
     overflow-wrap: anywhere;
 
     @media (min-width: 1024px) {
-      max-width: min(70%, 80ch);
+      max-width: 70%;
       font-size: $fs-base;
+      line-height: 1.6;
     }
 
     &.truncated { border-style: dashed; }
@@ -476,12 +652,20 @@ $chat-pad: clamp(16px, 4vw, 64px);
 }
 
 .input-bar {
-  @include row(8px, center);
   flex: 0 0 auto;
   padding: 12px $chat-pad;
   padding-bottom: max(12px, env(safe-area-inset-bottom));
   background-color: rgba($alfii-navy, 0.95);
   border-top: 1px solid rgba($alfii-cream, 0.08);
+
+  @media (min-width: 1024px) { padding-bottom: 20px; }
+
+  .input-inner {
+    @include row(8px, center);
+    width: 100%;
+    max-width: $reading-width;
+    margin: 0 auto;
+  }
 
   .upload-btn {
     padding: 12px;
