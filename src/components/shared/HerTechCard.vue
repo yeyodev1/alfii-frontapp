@@ -4,46 +4,37 @@
  * sabe de la chica. Misma familia visual que PowerCard (la carta del usuario):
  * nivel, clase, seis stats con barra, y los bloques de juego (le gusta,
  * evitar, odia, su jugada, como se gana).
+ *
+ * Es presentacional: recibe la carta ya cargada (la vista decide que version
+ * mostrar) y solo pide regenerar via evento.
  */
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import BaseIcon from '@/components/shared/BaseIcon.vue';
 import StatBar from '@/components/shared/StatBar.vue';
-import api from '@/services/http';
 import type { IconName } from '@/config/icons';
+import type { HerCard, HerStatKey } from '@/services/herCard.service';
 
-export type HerStatKey = 'AFE' | 'EXI' | 'INI' | 'JUE' | 'RIE' | 'RIT';
+const props = withDefaults(
+  defineProps<{
+    card: HerCard | null;
+    loading?: boolean;
+    reason?: string | null;
+    displayName: string;
+    avatarInitial?: string;
+    accentColor?: string;
+    riskLevel?: string;
+    herAge?: number | null;
+    herOccupation?: string | null;
+    /** Version historica: oculta el boton de regenerar. */
+    readonly?: boolean;
+    /** Arte del arquetipo (mismo que el home). Sustituye la inicial. */
+    portraitUrl?: string | null;
+  }>(),
+  { loading: false, reason: null, readonly: false }
+);
 
-export interface HerCard {
-  level: number;
-  tagline: string;
-  stats: { key: HerStatKey; label: string; value: number; hint: string }[];
-  likes: string[];
-  avoid: string[];
-  hates: string[];
-  winConditions: string[];
-  specialMove: { name: string; description: string } | null;
-  confidence: number;
-  archetype: { primary: string; label: string } | null;
-  generatedAt: string;
-  version: number;
-  stale: boolean;
-}
+const emit = defineEmits<{ (e: 'refresh'): void }>();
 
-const props = defineProps<{
-  targetId: string;
-  displayName: string;
-  avatarInitial?: string;
-  accentColor?: string;
-  riskLevel?: string;
-  herAge?: number | null;
-  herOccupation?: string | null;
-  /** Cambia cuando el expediente cambia: dispara la recarga de la ficha. */
-  version?: number;
-}>();
-
-const card = ref<HerCard | null>(null);
-const loading = ref(false);
-const reason = ref<string | null>(null);
 const hintAbierto = ref<HerStatKey | null>(null);
 
 const ICONO_POR_STAT: Record<HerStatKey, IconName> = {
@@ -66,11 +57,13 @@ function easeOutCubic(t: number): number {
 
 function animar(): void {
   if (rafId) cancelAnimationFrame(rafId);
-  const c = card.value;
+  const c = props.card;
   if (!c) return;
   const reduce =
     typeof window !== 'undefined' &&
     window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const desde: Record<string, number> = { ...valoresVisibles.value };
+  const levelDesde = levelVisible.value;
   const hasta: Record<string, number> = {};
   for (const s of c.stats) hasta[s.key] = s.value;
   if (reduce) {
@@ -82,28 +75,36 @@ function animar(): void {
   const paso = (ahora: number) => {
     const e = easeOutCubic(Math.min(1, (ahora - inicio) / 900));
     const next: Record<string, number> = {};
-    for (const k of Object.keys(hasta)) next[k] = Math.round((hasta[k] ?? 0) * e);
+    for (const k of Object.keys(hasta)) {
+      const a = desde[k] ?? 0;
+      next[k] = Math.round(a + ((hasta[k] ?? 0) - a) * e);
+    }
     valoresVisibles.value = next;
-    levelVisible.value = Math.round(c.level * e);
+    levelVisible.value = Math.round(levelDesde + (c.level - levelDesde) * e);
     if (e < 1) rafId = requestAnimationFrame(paso);
     else rafId = 0;
   };
   rafId = requestAnimationFrame(paso);
 }
 
-const columnaIzq = computed(() => card.value?.stats.slice(0, 3) ?? []);
-const columnaDer = computed(() => card.value?.stats.slice(3, 6) ?? []);
+const firma = computed(() =>
+  props.card ? `${props.card.generatedAt}|${props.card.level}|${props.card.stats.map((s) => s.value).join(',')}` : ''
+);
+watch(firma, () => animar(), { immediate: true });
+
+const columnaIzq = computed(() => props.card?.stats.slice(0, 3) ?? []);
+const columnaDer = computed(() => props.card?.stats.slice(3, 6) ?? []);
 
 // Tier por nivel: misma escala visual que la carta del usuario.
 const tier = computed(() => {
-  const l = card.value?.level ?? 0;
+  const l = props.card?.level ?? 0;
   if (l >= 85) return 'leyenda';
   if (l >= 65) return 'oro';
   if (l >= 40) return 'plata';
   return 'bronce';
 });
 
-const claseCodigo = computed(() => card.value?.archetype?.primary?.replace('_', ' ') ?? 'SIN CLASE');
+const claseCodigo = computed(() => props.card?.archetype?.primary?.replace('_', ' ') ?? 'SIN CLASE');
 
 const subtitulo = computed(() => {
   const partes: string[] = [];
@@ -112,21 +113,7 @@ const subtitulo = computed(() => {
   return partes.join(' · ');
 });
 
-const confianzaPct = computed(() => Math.round((card.value?.confidence ?? 0) * 100));
-
-async function cargar(refresh = false) {
-  loading.value = true;
-  try {
-    const res: any = await api.get(`/targets/${props.targetId}/card${refresh ? '?refresh=1' : ''}`);
-    card.value = res.card ?? null;
-    reason.value = res.reason ?? null;
-    if (card.value) animar();
-  } catch {
-    reason.value = 'error';
-  } finally {
-    loading.value = false;
-  }
-}
+const confianzaPct = computed(() => Math.round((props.card?.confidence ?? 0) * 100));
 
 function alternarHint(key: HerStatKey) {
   hintAbierto.value = hintAbierto.value === key ? null : key;
@@ -136,13 +123,6 @@ function valor(key: HerStatKey): number {
   return valoresVisibles.value[key] ?? 0;
 }
 
-onMounted(() => cargar());
-watch(
-  () => [props.targetId, props.version],
-  ([id, v], [prevId, prevV]) => {
-    if (id !== prevId || v !== prevV) void cargar();
-  }
-);
 onBeforeUnmount(() => {
   if (rafId) cancelAnimationFrame(rafId);
 });
@@ -166,7 +146,7 @@ onBeforeUnmount(() => {
         Ficha bloqueada. Sube una captura o importa el chat para que Alfii la desbloquee.
       </p>
       <p v-else>No pude armar la ficha ahora mismo.</p>
-      <button v-if="reason !== 'not_enough_evidence'" type="button" class="hc-retry" @click="cargar(true)">
+      <button v-if="reason !== 'not_enough_evidence'" type="button" class="hc-retry" @click="emit('refresh')">
         <BaseIcon name="rotate" size="xs" color="cream" />
         Reintentar
       </button>
@@ -179,8 +159,9 @@ onBeforeUnmount(() => {
           <span class="hc-level__label">NIVEL</span>
           <span class="hc-class">{{ claseCodigo }}</span>
         </div>
-        <div class="hc-portrait">
-          <span class="hc-portrait__initial">{{ avatarInitial || displayName.charAt(0).toUpperCase() }}</span>
+        <div class="hc-portrait" :class="{ 'has-art': !!portraitUrl }">
+          <img v-if="portraitUrl" :src="portraitUrl" alt="" class="hc-portrait__art" />
+          <span v-else class="hc-portrait__initial">{{ avatarInitial || displayName.charAt(0).toUpperCase() }}</span>
           <span v-if="riskLevel && riskLevel !== 'LIMPIO'" class="hc-portrait__risk" :class="`risk-${riskLevel}`">
             <BaseIcon name="flag" size="xs" color="cream" />
           </span>
@@ -261,10 +242,11 @@ onBeforeUnmount(() => {
           </div>
           <StatBar :value="confianzaPct" tone="sage" :height="3" />
         </div>
-        <button type="button" class="hc-refresh" :disabled="loading" :title="card.stale ? 'Hay datos nuevos' : 'Regenerar ficha'" @click="cargar(true)">
+        <button v-if="!readonly" type="button" class="hc-refresh" :disabled="loading" :title="card.stale ? 'Hay datos nuevos' : 'Regenerar ficha'" @click="emit('refresh')">
           <BaseIcon name="rotate" size="xs" :color="card.stale ? 'sage' : 'muted'" :spin="loading" />
           <span>{{ card.stale ? 'Actualizar ficha' : 'Regenerar' }}</span>
         </button>
+        <span v-else class="hc-version-tag">Versión histórica</span>
       </footer>
     </template>
   </article>
@@ -379,6 +361,22 @@ onBeforeUnmount(() => {
   font-size: 40px;
   font-weight: $fw-extrabold;
   flex-shrink: 0;
+
+  &.has-art {
+    width: 96px;
+    height: 120px;
+    border-radius: 18px;
+    overflow: hidden;
+    box-shadow: 0 10px 24px rgba($alfii-navy, 0.6);
+  }
+
+  &__art {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: top;
+    display: block;
+  }
 
   &__risk {
     position: absolute;
@@ -607,6 +605,15 @@ onBeforeUnmount(() => {
     color: rgba($alfii-cream, 0.6);
   }
   &__val { font-weight: $fw-bold; color: $alfii-sage; }
+}
+
+.hc-version-tag {
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px dashed rgba($alfii-cream, 0.25);
+  font-size: $fs-2xs;
+  color: rgba($alfii-cream, 0.6);
+  white-space: nowrap;
 }
 
 .hc-refresh {

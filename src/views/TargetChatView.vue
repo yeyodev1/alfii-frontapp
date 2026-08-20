@@ -5,7 +5,6 @@ import RiskBadge from '@/components/shared/RiskBadge.vue';
 import HerProfileCard from '@/components/shared/HerProfileCard.vue';
 import ImportSheet from '@/components/modals/ImportSheet.vue';
 import ExpedienteSidebar from '@/components/shared/ExpedienteSidebar.vue';
-import HerTechCard from '@/components/shared/HerTechCard.vue';
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '@/services/http';
@@ -319,25 +318,24 @@ async function sendTextMessage() {
 
       <div class="header-actions">
         <RiskBadge :level="(target.risk?.level as any) || 'LIMPIO'" />
-        <button class="profile-btn desktop-only" type="button" @click="showProfile = !showProfile">
-          {{ showProfile ? 'Cerrar ficha' : 'Ficha de ella' }}
-        </button>
+        <RouterLink class="profile-btn desktop-only" :to="`/chat/${targetId}/ficha`">
+          <BaseIcon name="archetype" size="xs" color="sage" />
+          Ficha de ella
+        </RouterLink>
       </div>
     </header>
 
     <!-- Ficha de ella: colapsable bajo el header -->
     <div v-if="target && showProfile" class="profile-panel">
       <div class="profile-grid">
-        <HerTechCard
-          :target-id="targetId"
-          :display-name="target.displayName"
-          :avatar-initial="target.avatarInitial"
-          :accent-color="target.accentColor"
-          :risk-level="target.risk?.level"
-          :her-age="target.herProfile?.herAge"
-          :her-occupation="target.herProfile?.herOccupation"
-          :version="target.version"
-        />
+        <RouterLink class="ficha-link" :to="`/chat/${targetId}/ficha`">
+          <span class="ficha-link__mark">{{ target.avatarInitial || '?' }}</span>
+          <span class="ficha-link__text">
+            <strong>Ver ficha técnica</strong>
+            <small>Carta de personaje, evolución e hitos con fechas</small>
+          </span>
+          <BaseIcon name="arrowRight" size="xs" color="muted" />
+        </RouterLink>
         <HerProfileCard
           :target-id="targetId"
           :display-name="target.displayName"
@@ -560,11 +558,32 @@ $reading-width: 860px;
   @include stack(14px);
   max-width: $reading-width;
   margin: 0 auto;
+}
 
-  @media (min-width: 1024px) {
-    @include row(20px, flex-start);
-    > :first-child { flex: 0 0 380px; }
-    > :last-child { flex: 1; min-width: 0; }
+.ficha-link {
+  @include row(12px, center);
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: linear-gradient(160deg, rgba($alfii-red, 0.16) 0%, rgba($alfii-plum, 0.9) 100%);
+  border: 1px solid rgba($alfii-red, 0.4);
+  color: $alfii-cream;
+  text-decoration: none;
+
+  &__mark {
+    @include center;
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    background-color: rgba($alfii-red, 0.3);
+    border: 1px solid $alfii-red;
+    font-weight: $fw-extrabold;
+    font-size: $fs-md;
+  }
+  &__text {
+    @include stack(2px);
+    flex: 1;
+    strong { font-size: $fs-sm; font-weight: $fw-bold; }
+    small { font-size: $fs-2xs; color: rgba($alfii-cream, 0.6); }
   }
 }
 

@@ -2,6 +2,7 @@
 import AppShell from '@/components/shared/AppShell.vue';
 import ModalHost from '@/components/modals/ModalHost.vue';
 import ToastHost from '@/components/modals/ToastHost.vue';
+import UpdateBanner from '@/components/shared/UpdateBanner.vue';
 import { onMounted, computed, ref } from 'vue';
 import { useAuthStore } from '@/stores/auth';
 import { useRoute, useRouter } from 'vue-router';
@@ -63,5 +64,6 @@ onMounted(() => {
     </RouterView>
     <ModalHost />
     <ToastHost />
+    <UpdateBanner />
   </AppShell>
 </template>
