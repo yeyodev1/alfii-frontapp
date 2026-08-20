@@ -28,6 +28,12 @@ type Block =
 const TIMING_RE = /^(?:⏱|⏰|🕐|⌛)️?\s*/;
 const NEXT_RE = /^(?:➜|→|➡|👉)️?\s*/;
 const BULLET_RE = /^(?:•|-|–|·)\s+/;
+// El modelo a veces olvida el ⏱ y escribe "Espera 2 horas..." en prosa. Una
+// linea SUELTA que empieza como instruccion de espera y trae una cantidad de
+// tiempo se trata igual que si trajera el icono.
+const TIMING_VERB_RE = /^(?:\*\*)?(?:espera|esper[aá]|no (?:le )?escribas|no (?:le )?respondas|deja pasar|dale|d[eé]jalo|escr[ií]bele|resp[oó]nde(?:le)?|cont[eé]stale|vuelve a escribir|reaparece|silencio)/i;
+const TIMING_QTY_RE = /\b\d+\s*(?:min|minutos?|h\b|horas?|d[ií]as?|semanas?)|\b(?:una|dos|tres|media)\s+(?:hora|horas|d[ií]a|d[ií]as|semana)/i;
+const looksLikeTiming = (line: string) => TIMING_VERB_RE.test(line) && TIMING_QTY_RE.test(line);
 
 const blocks = computed<Block[]>(() => {
   const out: Block[] = [];
@@ -44,7 +50,7 @@ const blocks = computed<Block[]>(() => {
     if (line.startsWith('>')) {
       flushPara();
       out.push({ type: 'script', text: line.replace(/^>\s?/, '').replace(/^["“]|["”]$/g, '') });
-    } else if (TIMING_RE.test(line)) {
+    } else if (TIMING_RE.test(line) || (para.length === 0 && looksLikeTiming(line))) {
       flushPara();
       out.push({ type: 'timing', text: line.replace(TIMING_RE, '') });
     } else if (NEXT_RE.test(line)) {
