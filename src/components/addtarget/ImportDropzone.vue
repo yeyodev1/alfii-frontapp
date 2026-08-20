@@ -7,7 +7,7 @@
  * pegado. Emite SOLO texto plano; quien lo recibe decide que hacer con el.
  */
 import { ref, computed } from 'vue';
-import { unzipSync, strFromU8 } from 'fflate';
+import { readChatExport } from '@/utils/chatFile';
 import BaseIcon from '@/components/shared/BaseIcon.vue';
 
 const props = defineProps<{
@@ -21,7 +21,6 @@ const emit = defineEmits<{
   (e: 'update:mode', mode: 'file' | 'paste'): void;
 }>();
 
-const MAX_BYTES = 2 * 1024 * 1024;
 const fileInput = ref<HTMLInputElement | null>(null);
 const dragOver = ref(false);
 const pasteText = ref('');
@@ -33,23 +32,8 @@ function pick() {
 
 async function readFile(file: File) {
   if (props.busy) return;
-  const lower = file.name.toLowerCase();
   try {
-    if (lower.endsWith('.zip') || file.type === 'application/zip') {
-      const entries = unzipSync(new Uint8Array(await file.arrayBuffer()));
-      const names = Object.keys(entries).filter((n) => n.toLowerCase().endsWith('.txt') && !n.startsWith('__MACOSX'));
-      const chosen = names.find((n) => /_chat\.txt$/i.test(n)) ?? names[0];
-      if (!chosen) throw new Error('Ese .zip no trae ningún chat de WhatsApp (.txt).');
-      const text = strFromU8(entries[chosen]!);
-      if (text.length > MAX_BYTES) throw new Error('Ese chat pesa más de 2 MB. Exporta un tramo más corto.');
-      emit('text', { text, fileName: chosen.split('/').pop() || 'chat.txt' });
-      return;
-    }
-    if (file.size > MAX_BYTES) throw new Error('Ese archivo pesa más de 2 MB. Exporta un tramo más corto.');
-    if (!lower.endsWith('.txt') && !file.type.startsWith('text/')) {
-      throw new Error('Necesito el .txt (o el .zip) que exporta WhatsApp, no una imagen.');
-    }
-    emit('text', { text: await file.text(), fileName: file.name });
+    emit('text', await readChatExport(file));
   } catch (err: any) {
     emit('error', err?.message || 'No pude leer ese archivo.');
   } finally {

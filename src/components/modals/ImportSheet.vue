@@ -7,7 +7,8 @@
  * el cliente ni el servidor persiste el archivo (misma promesa que las
  * capturas efimeras).
  */
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
+import { readChatExport } from '@/utils/chatFile';
 import BaseSheet from '@/components/modals/BaseSheet.vue';
 import BaseIcon from '@/components/shared/BaseIcon.vue';
 import api from '@/services/http';
@@ -30,6 +31,8 @@ interface ImportPreview {
 const props = defineProps<{
   /** Sin targetId = primer analisis (crea expediente al confirmar nombre). */
   targetId?: string | null;
+  /** Archivo ya soltado (drag & drop en el chat): se lee y se salta al preview. */
+  initialFile?: File | null;
 }>();
 
 const emit = defineEmits<{
@@ -65,13 +68,25 @@ function triggerFile() {
   fileInput.value?.click();
 }
 
+async function ingestFile(file: File) {
+  try {
+    const read = await readChatExport(file);
+    fileName.value = read.fileName;
+    chatText.value = read.text;
+    await loadPreview();
+  } catch (err: any) {
+    toastStore.show(err?.message || 'No pude leer ese archivo.', 'error');
+  }
+}
+
 async function handleFileSelected(event: Event) {
   const file = (event.target as HTMLInputElement).files?.[0];
-  if (!file) return;
-  fileName.value = file.name;
-  chatText.value = await file.text();
-  await loadPreview();
+  if (file) await ingestFile(file);
 }
+
+onMounted(() => {
+  if (props.initialFile) ingestFile(props.initialFile);
+});
 
 async function continueWithPaste() {
   chatText.value = pasteText.value;
@@ -126,7 +141,7 @@ function backToSource() {
       <input
         ref="fileInput"
         type="file"
-        accept=".txt,text/plain"
+        accept=".txt,.zip,text/plain,application/zip"
         class="hidden-input"
         @change="handleFileSelected"
       />

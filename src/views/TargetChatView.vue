@@ -9,6 +9,7 @@ import { ref, computed, onMounted, nextTick, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '@/services/http';
 import { useModal } from '@/composables/useModal';
+import { classifyFile, type DropKind } from '@/utils/chatFile';
 
 import { useToastStore } from '@/stores/toast';
 
@@ -121,9 +122,10 @@ function triggerUpload() {
 const { open } = useModal();
 
 /** Import del chat completo sobre este expediente: mas contexto que una captura. */
-function openImport() {
+function openImport(initialFile?: File) {
   open('importChat', ImportSheet, {
     targetId,
+    initialFile: initialFile ?? null,
     onAnalyzed: (res: any) => {
       messages.value.push({
         role: 'alfii',
@@ -140,8 +142,11 @@ function openImport() {
 async function handleFileSelected(event: Event) {
   const fileTarget = event.target as HTMLInputElement;
   const file = fileTarget.files?.[0];
-  if (!file) return;
+  if (file) await analyzeScreenshot(file);
+  fileTarget.value = '';
+}
 
+async function analyzeScreenshot(file: File) {
   sending.value = true;
   try {
     const formData = new FormData();
@@ -172,6 +177,72 @@ async function handleFileSelected(event: Event) {
     scrollToBottom();
   }
 }
+
+// ---------------------------------------------------------------------------
+// Arrastrar y soltar sobre TODO el chat.
+//
+// Una captura se analiza al instante; un .txt/.zip de WhatsApp abre la hoja de
+// import con el archivo ya leido. El overlay se pinta desde el primer
+// dragenter en la ventana y adivina el tipo mirando dataTransfer.items para
+// decirle al usuario que va a pasar ANTES de soltar.
+// ---------------------------------------------------------------------------
+const dragDepth = ref(0);
+const dragKind = ref<DropKind>('unknown');
+const isDragging = computed(() => dragDepth.value > 0);
+
+function kindFromTransfer(dt: DataTransfer | null): DropKind {
+  const item = dt?.items?.[0];
+  if (!item || item.kind !== 'file') return 'unknown';
+  // Durante dragover el nombre no viaja; solo el MIME. Sin MIME (algunos
+  // .txt en Windows) se asume chat: es el caso mas comun al arrastrar texto.
+  return item.type ? classifyFile({ type: item.type }) : 'chat';
+}
+
+function hasFiles(dt: DataTransfer | null): boolean {
+  return !!dt && Array.from(dt.types || []).includes('Files');
+}
+
+function onDragEnter(e: DragEvent) {
+  if (!hasFiles(e.dataTransfer)) return;
+  e.preventDefault();
+  dragDepth.value += 1;
+  dragKind.value = kindFromTransfer(e.dataTransfer);
+}
+
+function onDragOver(e: DragEvent) {
+  if (!hasFiles(e.dataTransfer)) return;
+  e.preventDefault();
+  if (e.dataTransfer) e.dataTransfer.dropEffect = sending.value ? 'none' : 'copy';
+}
+
+function onDragLeave(e: DragEvent) {
+  if (!hasFiles(e.dataTransfer)) return;
+  dragDepth.value = Math.max(0, dragDepth.value - 1);
+}
+
+async function onDrop(e: DragEvent) {
+  if (!hasFiles(e.dataTransfer)) return;
+  e.preventDefault();
+  dragDepth.value = 0;
+  if (sending.value) return;
+  const file = e.dataTransfer?.files?.[0];
+  if (!file) return;
+  const kind = classifyFile(file);
+  if (kind === 'image') {
+    await analyzeScreenshot(file);
+  } else if (kind === 'chat') {
+    openImport(file);
+  } else {
+    toastStore.show('Suelta una captura (imagen) o el chat exportado de WhatsApp (.txt / .zip).', 'error');
+  }
+}
+
+const DROP_COPY: Record<DropKind, { title: string; sub: string; icon: string }> = {
+  image: { title: 'Suelta la captura', sub: 'Alfii la lee y te dice qué responder.', icon: 'camera' },
+  chat: { title: 'Suelta el chat de WhatsApp', sub: 'Importa la conversación completa al expediente.', icon: 'platform.whatsapp' },
+  unknown: { title: 'Suelta para analizar', sub: 'Una captura o el .txt / .zip exportado de WhatsApp.', icon: 'upload' },
+};
+const dropCopy = computed(() => DROP_COPY[dragKind.value]);
 
 async function sendTextMessage() {
   const text = inputMessage.value.trim();
@@ -279,7 +350,34 @@ async function sendTextMessage() {
 </script>
 
 <template>
-  <div class="target-chat-view">
+  <div
+    class="target-chat-view"
+    :class="{ 'is-dragging': isDragging }"
+    @dragenter="onDragEnter"
+    @dragover="onDragOver"
+    @dragleave="onDragLeave"
+    @drop="onDrop"
+  >
+    <!-- Overlay de arrastre: cubre todo el chat, no captura eventos (los
+         recibe el contenedor) y dice que va a pasar segun el tipo de archivo. -->
+    <Transition name="drop">
+      <div v-if="isDragging" class="drop-overlay" aria-hidden="true">
+        <div class="drop-frame" :class="`kind-${dragKind}`">
+          <span class="drop-ring"></span>
+          <span class="drop-ring delay"></span>
+          <div class="drop-icon">
+            <BaseIcon :name="(dropCopy.icon as any)" size="2xl" color="cream" />
+          </div>
+          <h2>{{ dropCopy.title }}</h2>
+          <p>{{ dropCopy.sub }}</p>
+          <div class="drop-chips">
+            <span :class="{ on: dragKind === 'image' }"><BaseIcon name="camera" size="xs" color="cream" /> Captura</span>
+            <span :class="{ on: dragKind === 'chat' }"><BaseIcon name="platform.whatsapp" size="xs" color="cream" /> Chat .txt / .zip</span>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
     <ExpedienteSidebar class="desktop-only" :active-id="targetId" />
 
     <div class="chat-column">
@@ -402,7 +500,7 @@ async function sendTextMessage() {
         class="upload-btn"
         title="Importar conversación completa"
         :disabled="sending"
-        @click="openImport"
+        @click="openImport()"
       >
         <BaseIcon name="platform.whatsapp" size="base" color="cream" />
       </button>
@@ -738,5 +836,115 @@ $reading-width: 860px;
 
     &:disabled { opacity: 0.5; }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Overlay de arrastrar y soltar
+// ---------------------------------------------------------------------------
+.target-chat-view { position: relative; }
+
+.drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 80;
+  pointer-events: none;
+  @include center;
+  padding: clamp(16px, 4vw, 40px);
+  background:
+    radial-gradient(60% 50% at 50% 50%, rgba($alfii-red, 0.22), transparent 70%),
+    rgba($alfii-navy, 0.82);
+  backdrop-filter: blur(14px) saturate(1.2);
+}
+
+.drop-frame {
+  @include stack(10px, center);
+  position: relative;
+  width: min(560px, 100%);
+  padding: clamp(36px, 6vw, 56px) clamp(20px, 4vw, 40px);
+  border-radius: 28px;
+  border: 2px dashed rgba($alfii-cream, 0.45);
+  background-color: rgba($alfii-plum, 0.55);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba($alfii-cream, 0.06);
+  text-align: center;
+  animation: dropFloat 2.4s $ease-in-out infinite;
+
+  &.kind-image { border-color: $alfii-red; }
+  &.kind-chat { border-color: $alfii-sage; }
+
+  .drop-ring {
+    position: absolute;
+    inset: -2px;
+    border-radius: inherit;
+    border: 2px solid rgba($alfii-cream, 0.35);
+    animation: dropRing 1.8s $ease-out infinite;
+    &.delay { animation-delay: 0.9s; }
+  }
+
+  .drop-icon {
+    @include center;
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, rgba($alfii-red, 0.9), rgba($alfii-sage, 0.7));
+    box-shadow: 0 0 0 10px rgba($alfii-cream, 0.06), 0 18px 50px rgba($alfii-red, 0.45);
+    animation: dropPulse 1.6s $ease-in-out infinite;
+  }
+
+  h2 {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: clamp(24px, 4vw, 34px);
+    letter-spacing: -0.02em;
+    line-height: $lh-tight;
+    color: $alfii-cream;
+  }
+
+  p {
+    font-size: $fs-sm;
+    color: rgba($alfii-cream, 0.72);
+    max-width: 380px;
+  }
+
+  .drop-chips {
+    @include row(8px, center, center);
+    margin-top: 12px;
+    flex-wrap: wrap;
+
+    span {
+      @include row(6px);
+      padding: 7px 12px;
+      border-radius: 999px;
+      font-size: $fs-2xs;
+      font-weight: $fw-semibold;
+      color: rgba($alfii-cream, 0.55);
+      border: 1px solid rgba($alfii-cream, 0.14);
+      transition: all $dur-fast $ease-out;
+
+      &.on {
+        color: $alfii-cream;
+        border-color: rgba($alfii-cream, 0.6);
+        background-color: rgba($alfii-cream, 0.1);
+        transform: scale(1.06);
+      }
+    }
+  }
+}
+
+.drop-enter-active { transition: opacity $dur-base $ease-out; .drop-frame { transition: transform $dur-slow $ease-spring; } }
+.drop-leave-active { transition: opacity $dur-fast $ease-out; }
+.drop-enter-from, .drop-leave-to { opacity: 0; .drop-frame { transform: scale(0.92); } }
+
+@keyframes dropFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+@keyframes dropPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.07); }
+}
+@keyframes dropRing {
+  0% { transform: scale(1); opacity: 0.7; }
+  100% { transform: scale(1.06); opacity: 0; }
 }
 </style>
