@@ -16,6 +16,9 @@ import AlfiiLogo from '@/components/shared/AlfiiLogo.vue';
 import BaseIcon from '@/components/shared/BaseIcon.vue';
 import ExportGuide from '@/components/addtarget/ExportGuide.vue';
 import ImportDropzone from '@/components/addtarget/ImportDropzone.vue';
+import DuplicateTargetSheet from '@/components/modals/DuplicateTargetSheet.vue';
+import { useModal } from '@/composables/useModal';
+import { useTargetStore } from '@/stores/target';
 import { useAuthStore } from '@/stores/auth';
 import { useToastStore } from '@/stores/toast';
 import { useFirstAnalysisStore, type FirstAnalysisResponse } from '@/stores/firstAnalysis';
@@ -35,6 +38,8 @@ const router = useRouter();
 const authStore = useAuthStore();
 const toastStore = useToastStore();
 const firstAnalysisStore = useFirstAnalysisStore();
+const targetStore = useTargetStore();
+const { open, close } = useModal();
 
 type Step = 'guide' | 'upload' | 'confirm' | 'analyzing';
 const STEP_ORDER: Step[] = ['guide', 'upload', 'confirm', 'analyzing'];
@@ -120,13 +125,67 @@ async function analyze() {
     });
     firstAnalysisStore.setFromUpload(res);
     chatText.value = '';
-    router.push('/analisis');
+    if (isLoggedIn.value) {
+      // Con sesion el nombre ya viene del export: se crea el expediente aqui
+      // mismo y se aterriza en el chat de ella. /analisis es el carril del
+      // anonimo (scripts bloqueados → registro → confirmar nombre).
+      await createTarget(res.analysisId);
+    } else {
+      router.push('/analisis');
+    }
   } catch (err: any) {
     toastStore.show(err.message || 'No pude analizar la conversación.', 'error');
     step.value = 'confirm';
   } finally {
     if (phaseTimer) window.clearInterval(phaseTimer);
     phaseTimer = null;
+  }
+}
+
+const isLoggedIn = computed(() => !!authStore.user && !authStore.user.isAnonymous);
+
+/**
+ * Crea el expediente desde el analisis. Si ya existe una chica con ese nombre
+ * el backend responde 409 y decide el usuario: sumar al expediente o crear
+ * otro. Nunca se elige por el.
+ */
+async function createTarget(analysisId: string, mode?: 'merge' | 'separate') {
+  try {
+    const res: any = await api.post('/targets/confirm', {
+      analysisId,
+      displayName: herName.value,
+      ...(mode ? { mode } : {}),
+    });
+    close();
+    const id = res?.target?.id;
+    if (!id) throw new Error('No recibí el expediente.');
+    firstAnalysisStore.setTargetId(id);
+    try { await targetStore.fetchTargets(); } catch { /* la boveda se refresca sola al entrar */ }
+    toastStore.show(
+      mode === 'merge'
+        ? `Chat sumado al expediente de ${res.target.displayName}.`
+        : `Expediente de ${res.target.displayName} creado.`,
+      'success',
+    );
+    router.push(`/chat/${id}`);
+  } catch (err: any) {
+    if (err?.details?.reason === 'duplicate_target' && err.details.existing) {
+      close();
+      open('duplicateTarget', DuplicateTargetSheet, {
+        name: herName.value,
+        existing: err.details.existing,
+        onMerge: () => createTarget(analysisId, 'merge'),
+        onSeparate: () => createTarget(analysisId, 'separate'),
+        onClose: () => {
+          close();
+          // Analisis hecho pero sin expediente: que no se pierda la lectura.
+          router.push('/analisis');
+        },
+      });
+      return;
+    }
+    toastStore.show(err.message || 'No pude crear el expediente.', 'error');
+    router.push('/analisis');
   }
 }
 
