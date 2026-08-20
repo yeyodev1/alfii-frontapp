@@ -154,7 +154,7 @@ function goToChat(id: string) {
 }
 
 function goToUpload() {
-  router.push('/');
+  router.push('/nueva');
 }
 
 /** Reemplaza en sitio el expediente que devuelve el backend. */

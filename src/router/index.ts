@@ -27,6 +27,12 @@ const routes: Array<RouteRecordRaw> = [
     meta: { title: 'Tu primer análisis — alfii', immersive: true, depth: 1 },
   },
   {
+    path: '/nueva',
+    name: 'AddTarget',
+    component: () => import('../views/AddTargetView.vue'),
+    meta: { title: 'Nueva chica — alfii', immersive: true, depth: 1 },
+  },
+  {
     path: '/onboarding',
     name: 'Onboarding',
     component: () => import('../views/OnboardingView.vue'),

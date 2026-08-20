@@ -7,6 +7,8 @@ import { useAuthStore } from '@/stores/auth';
 
 const props = defineProps<{
   legalVersion: string;
+  /** Desde el header del home la hoja abre directo en "Iniciar sesion". */
+  startMode?: 'login' | 'register';
 }>();
 
 const emit = defineEmits<{
@@ -16,7 +18,7 @@ const emit = defineEmits<{
 
 const authStore = useAuthStore();
 const router = useRouter();
-const isLogin = ref(false);
+const isLogin = ref(props.startMode === 'login');
 const email = ref('');
 const password = ref('');
 const confirm18 = ref(false);

@@ -10,12 +10,12 @@
  * PORQUE se partio: HomeView tenia 2400 lineas donde el copy, la coreografia y
  * el flujo de negocio se estorbaban. Tocar una animacion obligaba a leerlo todo.
  */
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter, RouterLink } from 'vue-router';
 import AlfiiLogo from '@/components/shared/AlfiiLogo.vue';
 import BaseIcon from '@/components/shared/BaseIcon.vue';
 import WingmanIntroSheet from '@/components/modals/WingmanIntroSheet.vue';
-import ImportSheet from '@/components/modals/ImportSheet.vue';
+import AuthSheet from '@/components/modals/AuthSheet.vue';
 import AnalysisDossier from '@/components/modals/AnalysisDossier.vue';
 import HeroSection from '@/components/home/HeroSection.vue';
 import PainSection from '@/components/home/PainSection.vue';
@@ -32,8 +32,7 @@ import { useModal } from '@/composables/useModal';
 import { useAuthStore } from '@/stores/auth';
 import { useToastStore } from '@/stores/toast';
 import { useGsapContext, gsap, ScrollTrigger } from '@/composables/useGsap';
-import { useFirstAnalysisStore, type FirstAnalysisResponse } from '@/stores/firstAnalysis';
-import api from '@/services/http';
+import { useFirstAnalysisStore, type FirstAnalysisResponse } from '@/stores/firstAnalysis';import api from '@/services/http';
 
 const router = useRouter();
 const { open } = useModal();
@@ -64,14 +63,44 @@ function startExperience() {
   });
 }
 
-/** Import del chat completo: mismo destino que la captura, mas contexto. */
+/** Import del chat completo: vive en su propia pantalla guiada (/nueva). */
 function openImport() {
-  open('importChat', ImportSheet, {
-    onAnalyzed: (res: FirstAnalysisResponse) => {
-      firstAnalysisStore.setFromUpload(res);
-      router.push('/analisis');
-    },
+  router.push('/nueva');
+}
+
+// ---------------------------------------------------------------------------
+// Sesion desde el header
+// ---------------------------------------------------------------------------
+const isLoggedIn = computed(() => !!authStore.user && !authStore.user.isAnonymous);
+const userInitial = computed(() => {
+  const u = authStore.user;
+  const base = u?.preferredName || u?.email || '';
+  return base.charAt(0).toUpperCase() || 'A';
+});
+const userLabel = computed(() => {
+  const u = authStore.user;
+  return u?.preferredName || u?.email?.split('@')[0] || 'Tu cuenta';
+});
+
+async function openLogin() {
+  let legalVersion = '';
+  try {
+    const legalMeta: any = await api.get('/legal/meta');
+    legalVersion = legalMeta.version;
+  } catch {
+    // Sin version legal solo se bloquea el registro; el login sigue.
+  }
+  open('auth', AuthSheet, {
+    legalVersion,
+    startMode: 'login',
+    onSuccess: () => toastStore.show('Sesión iniciada. Tus partidas te esperan.', 'success'),
   });
+}
+
+async function handleLogout() {
+  authStore.logout();
+  await authStore.initAnonymous();
+  toastStore.show('Sesión cerrada.', 'success');
 }
 
 function handleDrop(e: DragEvent) {
@@ -141,21 +170,23 @@ useGsapContext(() => {
     });
   }
 
-  // Header diferido: en el tope no existe (el hero ya trae su HUD y su CTA —
-  // otra barra ahi solo duplica). Aparece al primer gesto de scroll hacia
-  // ARRIBA dentro de la pagina y se retira en cuanto vuelves a bajar.
-  // Umbral: el final del film del hero. Dentro del film manda el HUD propio
-  // del hero (Jugador 1 + medidores); el header solo opera en las secciones.
+  // Header: visible en el tope de la pagina (ahi vive el acceso a la sesion,
+  // tiene que encontrarse sin buscar). Dentro del film del hero se retira para
+  // dejar mandar al HUD propio (Jugador 1 + medidores) y vuelve con cualquier
+  // gesto de scroll hacia ARRIBA pasado el film.
   const navEl = document.querySelector('.navbar');
   const filmEnd = () => {
     const film = document.querySelector<HTMLElement>('.film');
     return film ? film.offsetTop + film.offsetHeight - window.innerHeight : 600;
   };
+  navEl?.classList.add('is-on');
   ScrollTrigger.create({
     start: 0,
     end: 'max',
     onUpdate: (self) => {
-      navEl?.classList.toggle('is-on', self.scroll() > filmEnd() && self.direction === -1);
+      const y = self.scroll();
+      const atTop = y < 80;
+      navEl?.classList.toggle('is-on', atTop || (y > filmEnd() && self.direction === -1));
     },
   });
 }, pageRef);
@@ -179,10 +210,23 @@ useGsapContext(() => {
           <span class="brand-word">alfii</span>
         </div>
         <div class="nav-dock">
-          <RouterLink v-if="!authStore.user?.isAnonymous" to="/vault" class="nav-ghost">
-            <BaseIcon name="vault" size="xs" color="cream" />
-            <span class="only-desktop">Mis partidas</span>
-          </RouterLink>
+          <template v-if="isLoggedIn">
+            <RouterLink to="/vault" class="nav-ghost">
+              <BaseIcon name="vault" size="xs" color="cream" />
+              <span class="only-desktop">Mis partidas</span>
+            </RouterLink>
+            <RouterLink to="/settings" class="nav-user" :title="userLabel">
+              <span class="nav-avatar">{{ userInitial }}</span>
+              <span class="only-desktop nav-user-name">{{ userLabel }}</span>
+            </RouterLink>
+            <button class="nav-ghost" title="Cerrar sesión" @click="handleLogout">
+              <BaseIcon name="logout" size="xs" color="cream" />
+            </button>
+          </template>
+          <button v-else class="nav-ghost" @click="openLogin">
+            <BaseIcon name="key" size="xs" color="cream" />
+            <span>Entrar</span>
+          </button>
           <button class="nav-cta" @click="startExperience">
             <BaseIcon name="upload" size="xs" color="cream" />
             <span>Nueva partida</span>
@@ -344,6 +388,38 @@ useGsapContext(() => {
     &:hover {
       background-color: rgba($alfii-cream, 0.08);
       color: $alfii-cream;
+    }
+  }
+
+  .nav-user {
+    @include row(8px);
+    padding: 4px 10px 4px 4px;
+    border-radius: 999px;
+    max-width: 180px;
+    color: rgba($alfii-cream, 0.9);
+    transition: background-color $dur-fast $ease-out;
+
+    &:hover { background-color: rgba($alfii-cream, 0.08); }
+
+    .nav-avatar {
+      @include center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, $alfii-red, #ff3b5c);
+      font-family: var(--font-display);
+      font-weight: 800;
+      font-size: $fs-2xs;
+      color: $alfii-cream;
+      flex-shrink: 0;
+    }
+
+    .nav-user-name {
+      font-size: $fs-2xs;
+      font-weight: $fw-semibold;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
   }
 
