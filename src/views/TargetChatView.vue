@@ -5,6 +5,7 @@ import RiskBadge from '@/components/shared/RiskBadge.vue';
 import HerProfileCard from '@/components/shared/HerProfileCard.vue';
 import ImportSheet from '@/components/modals/ImportSheet.vue';
 import ExpedienteSidebar from '@/components/shared/ExpedienteSidebar.vue';
+import HerTechCard from '@/components/shared/HerTechCard.vue';
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '@/services/http';
@@ -326,13 +327,25 @@ async function sendTextMessage() {
 
     <!-- Ficha de ella: colapsable bajo el header -->
     <div v-if="target && showProfile" class="profile-panel">
-      <HerProfileCard
-        :target-id="targetId"
-        :display-name="target.displayName"
-        :her-profile="target.herProfile"
-        :completeness="target.herCompleteness"
-        @saved="(t: any) => (target = t)"
-      />
+      <div class="profile-grid">
+        <HerTechCard
+          :target-id="targetId"
+          :display-name="target.displayName"
+          :avatar-initial="target.avatarInitial"
+          :accent-color="target.accentColor"
+          :risk-level="target.risk?.level"
+          :her-age="target.herProfile?.herAge"
+          :her-occupation="target.herProfile?.herOccupation"
+          :version="target.version"
+        />
+        <HerProfileCard
+          :target-id="targetId"
+          :display-name="target.displayName"
+          :her-profile="target.herProfile"
+          :completeness="target.herCompleteness"
+          @saved="(t: any) => (target = t)"
+        />
+      </div>
     </div>
 
     <!-- Hilo de mensajes -->
@@ -538,9 +551,21 @@ $reading-width: 860px;
   @media (min-width: 1024px) { gap: 14px; }
 }
 
-.profile-panel > * {
+.profile-panel {
+  @include scroll-y;
+  max-height: 70vh;
+}
+
+.profile-grid {
+  @include stack(14px);
   max-width: $reading-width;
   margin: 0 auto;
+
+  @media (min-width: 1024px) {
+    @include row(20px, flex-start);
+    > :first-child { flex: 0 0 380px; }
+    > :last-child { flex: 1; min-width: 0; }
+  }
 }
 
 .msg-row {
