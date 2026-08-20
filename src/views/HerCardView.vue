@@ -119,7 +119,7 @@ const metersSeries = computed(() => {
   if (!data.value) return [];
   const src =
     data.value.metersHistory.length >= 2
-      ? data.value.metersHistory.map((m) => ({ at: m.at, ...m }))
+      ? data.value.metersHistory.map((m) => ({ ...m }))
       : [...data.value.history]
           .sort((a, b) => +new Date(a.generatedAt) - +new Date(b.generatedAt))
           .map((h) => ({ at: h.generatedAt, ...h.meters }));
@@ -297,7 +297,7 @@ watch(targetId, () => {
                     class="milestone"
                     :class="{ done: m.achieved }"
                   >
-                    <span class="milestone__icon"><BaseIcon :name="MILESTONE_ICON[m.key]" size="xs" :color="m.achieved ? 'sage' : 'muted'" /></span>
+                    <span class="milestone__icon"><BaseIcon :name="MILESTONE_ICON[m.key] ?? 'check'" size="xs" :color="m.achieved ? 'sage' : 'muted'" /></span>
                     <span class="milestone__label">{{ m.label }}</span>
                     <span class="milestone__date">{{ m.achieved && m.at ? fmtDate(m.at) : 'pendiente' }}</span>
                   </li>

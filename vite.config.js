@@ -1,24 +1,21 @@
 import { fileURLToPath, URL } from 'node:url';
 import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
-
 // Sello de build: el front lo compara contra /version.json cada tanto y, si
 // cambio, muestra el aviso "Alfii se actualizo, toca para actualizar".
-const BUILD_ID = `${Date.now().toString(36)}`
-
+const BUILD_ID = `${Date.now().toString(36)}`;
 function versionStamp() {
-  return {
-    name: 'alfii-version-stamp',
-    generateBundle() {
-      this.emitFile({
-        type: 'asset',
-        fileName: 'version.json',
-        source: JSON.stringify({ buildId: BUILD_ID, builtAt: new Date().toISOString() }),
-      })
-    },
-  }
+    return {
+        name: 'alfii-version-stamp',
+        generateBundle() {
+            this.emitFile({
+                type: 'asset',
+                fileName: 'version.json',
+                source: JSON.stringify({ buildId: BUILD_ID, builtAt: new Date().toISOString() }),
+            });
+        },
+    };
 }
-
 export default defineConfig({
     define: { __BUILD_ID__: JSON.stringify(BUILD_ID) },
     plugins: [vue(), versionStamp()],
