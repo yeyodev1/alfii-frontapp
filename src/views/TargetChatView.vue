@@ -147,42 +147,79 @@ async function sendTextMessage() {
       body: JSON.stringify({ message: text }),
     });
 
+    if (!response.ok) {
+      let detail = '';
+      try { detail = (await response.json())?.message || ''; } catch { /* sin cuerpo */ }
+      throw new Error(detail || `Error ${response.status} al enviar mensaje`);
+    }
     if (!response.body) return;
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
 
-    let alfiiMsg = { role: 'alfii', kind: 'text', content: '' };
-    messages.value.push(alfiiMsg);
+    // Se toma la referencia REACTIVA del array: mutar el objeto plano no
+    // dispara render y la burbuja se quedaba a medias hasta otro re-render.
+    messages.value.push({ role: 'alfii', kind: 'text', content: '' });
+    const alfiiMsg = messages.value[messages.value.length - 1];
+
+    // Parser SSE: un evento = bloque separado por linea en blanco, con lineas
+    // `event:` y `data:`. Se tolera \r\n y comentarios de heartbeat (`: ping`).
+    const handleEvent = (eventName: string, rawData: string) => {
+      let data: any = null;
+      try { data = JSON.parse(rawData); } catch { data = rawData; }
+
+      switch (eventName) {
+        case 'delta':
+          if (typeof data === 'string') {
+            alfiiMsg.content += data;
+            scrollToBottom();
+          }
+          break;
+        case 'state':
+          // El backend guardo cambios de expediente (medidores, datos de ella
+          // extraidos del chat): se refresca el header y la tarjeta de perfil.
+          void refreshTarget();
+          break;
+        case 'error':
+          if (data?.partial) {
+            alfiiMsg.truncated = true;
+          }
+          toastStore.show(data?.message || 'Se corto la respuesta', 'error');
+          break;
+        case 'done':
+          if (data?.messageId) alfiiMsg._id = data.messageId;
+          break;
+      }
+    };
 
     let buffer = '';
+    const flushBlock = (block: string) => {
+      let eventName = 'message';
+      const dataLines: string[] = [];
+      for (const line of block.split('\n')) {
+        if (line.startsWith(':')) continue;
+        if (line.startsWith('event:')) eventName = line.slice(6).trim();
+        else if (line.startsWith('data:')) dataLines.push(line.slice(5).replace(/^ /, ''));
+      }
+      if (dataLines.length) handleEvent(eventName, dataLines.join('\n'));
+    };
+
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (line.startsWith('event: delta')) {
-          const match = line.match(/data: ("(.*)"|.*)/);
-          if (match) {
-            try {
-              const rawData = line.split('data: ')[1] || '""';
-              const delta = JSON.parse(rawData);
-              alfiiMsg.content += delta;
-              scrollToBottom();
-            } catch {
-              // Parse fallback
-            }
-          }
-        } else if (line.startsWith('event: state')) {
-          // El backend guardo cambios de expediente (medidores, datos de ella
-          // extraidos del chat): se refresca el header y la tarjeta de perfil.
-          void refreshTarget();
-        }
+      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+      let sep: number;
+      while ((sep = buffer.indexOf('\n\n')) !== -1) {
+        flushBlock(buffer.slice(0, sep));
+        buffer = buffer.slice(sep + 2);
       }
+    }
+    buffer += decoder.decode();
+    if (buffer.trim()) flushBlock(buffer);
+
+    if (!alfiiMsg.content.trim()) {
+      messages.value.splice(messages.value.indexOf(alfiiMsg), 1);
     }
   } catch (err: any) {
     toastStore.show(err.message || 'Error al enviar mensaje', 'error');
@@ -252,8 +289,9 @@ async function sendTextMessage() {
         </div>
 
         <!-- Texto normal o saludo -->
-        <div v-else class="text-bubble">
+        <div v-else class="text-bubble" :class="{ truncated: msg.truncated }">
           <p>{{ msg.content }}</p>
+          <span v-if="msg.truncated" class="truncated-note">Respuesta cortada · pídele que continúe</span>
         </div>
       </div>
 
@@ -302,17 +340,19 @@ async function sendTextMessage() {
 .target-chat-view {
   @include stack(0);
   height: 100dvh;
-  max-width: 600px;
-  margin: 0 auto;
   width: 100%;
 }
+
+// En escritorio el chat ocupa toda la pantalla; el ancho de lectura lo
+// controlan las burbujas (max-width en ch), no un contenedor estrecho.
+$chat-pad: clamp(16px, 4vw, 64px);
 
 .hidden-input { display: none; }
 
 .target-header {
   @include row(12px, center);
   flex: 0 0 auto;
-  padding: 12px clamp(16px, 4vw, 24px);
+  padding: 12px $chat-pad;
   background-color: rgba($alfii-plum, 0.9);
   backdrop-filter: blur(16px);
   border-bottom: 1px solid rgba($alfii-cream, 0.08);
@@ -338,7 +378,7 @@ async function sendTextMessage() {
 
 .profile-panel {
   flex: 0 0 auto;
-  padding: 10px clamp(16px, 4vw, 24px);
+  padding: 10px $chat-pad;
   border-bottom: 1px solid rgba($alfii-cream, 0.08);
   background-color: rgba($alfii-navy, 0.5);
   animation: fadeInUp $dur-base $ease-out both;
@@ -350,8 +390,13 @@ async function sendTextMessage() {
   flex: 1;
   min-height: 0;
   @include scroll-y;
-  padding: 16px clamp(16px, 4vw, 24px);
+  padding: 16px $chat-pad;
   @include stack(12px);
+
+  @media (min-width: 1024px) {
+    padding-top: 24px;
+    padding-bottom: 24px;
+  }
 }
 
 .msg-row {
@@ -376,8 +421,25 @@ async function sendTextMessage() {
   }
 
   .text-bubble {
-    max-width: 85%;
+    max-width: min(85%, 72ch);
     padding: 12px 16px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+
+    @media (min-width: 1024px) {
+      max-width: min(70%, 80ch);
+      font-size: $fs-base;
+    }
+
+    &.truncated { border-style: dashed; }
+
+    .truncated-note {
+      display: block;
+      margin-top: 8px;
+      font-size: $fs-2xs;
+      color: rgba($alfii-cream, 0.55);
+      font-style: italic;
+    }
     border-radius: 16px;
     font-size: $fs-sm;
     line-height: $lh-relaxed;
@@ -398,7 +460,7 @@ async function sendTextMessage() {
   // La captura se muestra acotada: es contexto del analisis, no la pieza
   // principal del hilo.
   .screenshot-msg {
-    max-width: 72%;
+    max-width: min(72%, 420px);
     border-radius: 16px;
     overflow: hidden;
     border: 1px solid rgba($alfii-cream, 0.14);
@@ -416,7 +478,7 @@ async function sendTextMessage() {
 .input-bar {
   @include row(8px, center);
   flex: 0 0 auto;
-  padding: 12px clamp(16px, 4vw, 24px);
+  padding: 12px $chat-pad;
   padding-bottom: max(12px, env(safe-area-inset-bottom));
   background-color: rgba($alfii-navy, 0.95);
   border-top: 1px solid rgba($alfii-cream, 0.08);
@@ -430,6 +492,8 @@ async function sendTextMessage() {
   textarea {
     flex: 1;
     padding: 12px 16px;
+    min-height: 46px;
+    max-height: 160px;
     background-color: rgba($alfii-plum, 0.6);
     border: 1px solid rgba($alfii-cream, 0.15);
     border-radius: 12px;
