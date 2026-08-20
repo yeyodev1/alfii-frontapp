@@ -3,6 +3,7 @@ import BaseIcon from '@/components/shared/BaseIcon.vue';
 import AnalysisCard from '@/components/shared/AnalysisCard.vue';
 import RiskBadge from '@/components/shared/RiskBadge.vue';
 import HerProfileCard from '@/components/shared/HerProfileCard.vue';
+import AlfiiRichText from '@/components/shared/AlfiiRichText.vue';
 import ImportSheet from '@/components/modals/ImportSheet.vue';
 import ExpedienteSidebar from '@/components/shared/ExpedienteSidebar.vue';
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
@@ -546,8 +547,9 @@ async function sendTextMessage() {
         <!-- Texto normal o saludo -->
         <template v-else>
           <span v-if="msg.role === 'alfii'" class="alfii-mark desktop-only">a</span>
-          <div class="text-bubble" :class="{ truncated: msg.truncated }">
-            <p>{{ msg.content }}</p>
+          <div class="text-bubble" :class="{ truncated: msg.truncated, rich: msg.role === 'alfii' }">
+            <AlfiiRichText v-if="msg.role === 'alfii'" :content="msg.content" />
+            <p v-else>{{ msg.content }}</p>
             <span v-if="msg.truncated" class="truncated-note">Respuesta cortada · pídele que continúe</span>
           </div>
         </template>
@@ -825,6 +827,12 @@ $reading-width: 860px;
     padding: 12px 16px;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+
+    &.rich {
+      white-space: normal;
+      max-width: min(92%, 72ch);
+      padding: 14px 16px;
+    }
 
     @media (min-width: 1024px) {
       max-width: 70%;
