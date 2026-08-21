@@ -49,19 +49,43 @@ function scrollToBottom() {
   });
 }
 
+const loadingExpediente = ref(true);
+// Cuantos mensajes entran con animacion escalonada tras la carga: los ultimos
+// N del hilo (los visibles). El resto aparece sin delay para no esperar.
+const STAGGER_COUNT = 10;
+const revealedAt = ref(0);
+
+function enterDelay(idx: number): string {
+  const total = revealedAt.value;
+  if (!total) return '0ms';
+  const fromEnd = total - 1 - idx;
+  if (fromEnd < 0 || fromEnd >= STAGGER_COUNT) return '0ms';
+  // El mas antiguo de la ventana entra primero; el ultimo, al final.
+  return `${(STAGGER_COUNT - 1 - fromEnd) * 70 + 120}ms`;
+}
+
 async function loadExpediente() {
   targetId = routeId.value;
   target.value = null;
   messages.value = [];
   showProfile.value = false;
+  showHistory.value = false;
+  loadingExpediente.value = true;
+  revealedAt.value = 0;
   try {
-    const resTarget: any = await api.get(`/targets/${targetId}`);
+    // Expediente e hilo en paralelo: antes iban en serie y la pantalla quedaba
+    // vacia el doble de tiempo.
+    const [resTarget, resMsgs]: any[] = await Promise.all([
+      api.get(`/targets/${targetId}`),
+      api.get(`/targets/${targetId}/messages`),
+    ]);
     target.value = resTarget.target;
-
-    const resMsgs: any = await api.get(`/targets/${targetId}/messages`);
     messages.value = resMsgs.messages || [];
+    revealedAt.value = messages.value.length;
+    loadingExpediente.value = false;
+    scrollToBottom();
 
-    // Saludo proactivo de reingreso
+    // Saludo proactivo de reingreso: llega despues, como un mensaje nuevo.
     const resGreet: any = await api.get(`/targets/${targetId}/greeting`);
     if (resGreet.greeting) {
       messages.value.push({
@@ -70,10 +94,10 @@ async function loadExpediente() {
         kind: 'greeting',
         content: resGreet.greeting,
       });
+      scrollToBottom();
     }
-
-    scrollToBottom();
   } catch (err: any) {
+    loadingExpediente.value = false;
     toastStore.show(err.message || 'Error al cargar expediente', 'error');
   }
 }
@@ -471,6 +495,17 @@ async function sendTextMessage() {
     />
 
     <!-- Header de la chica -->
+    <!-- Esqueleto del header mientras llega el expediente -->
+    <header v-if="!target && loadingExpediente" class="target-header skeleton" aria-busy="true">
+      <span class="sk sk-back"></span>
+      <span class="sk sk-avatar desktop-only"></span>
+      <span class="sk-lines">
+        <span class="sk sk-line w40"></span>
+        <span class="sk sk-line w60 thin"></span>
+      </span>
+      <span class="sk sk-pill"></span>
+    </header>
+
     <header v-if="target" class="target-header">
       <RouterLink to="/vault" class="back-btn">
         <BaseIcon name="back" size="sm" color="cream" />
@@ -537,11 +572,21 @@ async function sendTextMessage() {
     <!-- Hilo de mensajes -->
     <div ref="chatContainer" class="chat-thread">
       <div class="thread-inner">
+      <!-- Esqueleto del hilo: burbujas fantasma alternadas con shimmer -->
+      <template v-if="loadingExpediente">
+        <div v-for="n in 6" :key="'sk' + n" class="msg-row sk-row" :class="n % 3 === 0 ? 'user' : 'alfii'" aria-hidden="true">
+          <span v-if="n % 3 !== 0" class="sk sk-mark desktop-only"></span>
+          <span class="sk sk-bubble" :class="`v${n}`"></span>
+        </div>
+        <p class="sk-hint"><BaseIcon name="spinner" spin size="xs" color="muted" /> Abriendo el expediente…</p>
+      </template>
+
       <div
         v-for="(msg, idx) in messages"
         :key="msg._id || idx"
-        class="msg-row"
+        class="msg-row enter"
         :class="[msg.role, { system: msg.kind === 'stateChange' }]"
+        :style="{ animationDelay: enterDelay(idx) }"
       >
         <!-- Cambio de expediente: chip de sistema, no burbuja -->
         <span v-if="msg.kind === 'stateChange'" class="state-chip">
@@ -600,7 +645,7 @@ async function sendTextMessage() {
     <!-- Input bar -->
     <footer class="input-bar">
       <div class="input-inner">
-      <button class="upload-btn" @click="triggerUpload" :disabled="sending">
+      <button class="upload-btn" @click="triggerUpload" :disabled="sending || loadingExpediente">
         <BaseIcon name="camera" size="base" color="cream" />
       </button>
 
@@ -1027,6 +1072,64 @@ $reading-width: 860px;
   0% { top: 0; }
   50% { top: calc(100% - 2px); }
   100% { top: 0; }
+}
+
+
+// ---------------------------------------------------------------------------
+// Carga: esqueletos con shimmer + entrada escalonada del hilo
+// ---------------------------------------------------------------------------
+.sk {
+  display: block;
+  border-radius: 10px;
+  background: linear-gradient(100deg, rgba($alfii-cream, 0.06) 20%, rgba($alfii-cream, 0.16) 50%, rgba($alfii-cream, 0.06) 80%);
+  background-size: 220% 100%;
+  animation: shimmer 1.5s linear infinite;
+}
+
+.target-header.skeleton {
+  .sk-back { width: 24px; height: 24px; border-radius: 8px; }
+  .sk-avatar { width: 40px; height: 40px; border-radius: 50%; }
+  .sk-lines { @include stack(7px); flex: 1; min-width: 0; }
+  .sk-line { height: 14px; &.thin { height: 10px; } &.w40 { width: 40%; } &.w60 { width: 60%; max-width: 260px; } }
+  .sk-pill { width: 84px; height: 26px; border-radius: 999px; }
+}
+
+.sk-row {
+  animation: fadeIn $dur-base $ease-out both;
+  .sk-mark { width: 28px; height: 28px; border-radius: 50%; margin-right: 10px; flex-shrink: 0; }
+  .sk-bubble {
+    height: 52px;
+    border-radius: 18px;
+    &.v1 { width: 58%; }
+    &.v2 { width: 72%; height: 88px; }
+    &.v3 { width: 38%; }
+    &.v4 { width: 64%; height: 64px; }
+    &.v5 { width: 80%; height: 110px; }
+    &.v6 { width: 44%; }
+    @for $i from 1 through 6 { &.v#{$i} { animation-delay: #{$i * 90}ms; } }
+  }
+  &.user .sk-bubble { border-bottom-right-radius: 4px; }
+  &.alfii .sk-bubble { border-bottom-left-radius: 4px; }
+}
+
+.sk-hint {
+  @include row(8px, center, center);
+  padding: 8px 0 4px;
+  font-size: $fs-2xs;
+  color: rgba($alfii-cream, 0.45);
+  animation: fadeIn $dur-slow $ease-out 300ms both;
+}
+
+.msg-row.enter {
+  animation: msgIn $dur-slow $ease-out both;
+}
+@keyframes msgIn {
+  from { opacity: 0; transform: translateY(10px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .msg-row.enter, .sk-row { animation: none; }
+  .sk { animation: none; }
 }
 
 // Burbuja de nota de voz transcrita (lado usuario)

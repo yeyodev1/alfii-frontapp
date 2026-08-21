@@ -137,6 +137,15 @@ onUnmounted(() => {
     </div>
 
     <nav class="sb-list">
+      <template v-if="targetStore.loading && !sorted.length">
+        <div v-for="n in 5" :key="'sk' + n" class="item sk-item" aria-hidden="true" :style="{ animationDelay: `${n * 70}ms` }">
+          <span class="sk sk-avatar"></span>
+          <span class="item-body">
+            <span class="sk sk-line" :style="{ width: `${48 + (n % 3) * 14}%` }"></span>
+            <span class="sk sk-line thin" :style="{ width: `${60 + (n % 2) * 20}%` }"></span>
+          </span>
+        </div>
+      </template>
       <RouterLink
         v-for="t in sorted"
         :key="t.id"
@@ -442,4 +451,24 @@ onUnmounted(() => {
 
 .acct-enter-active, .acct-leave-active { transition: opacity $dur-fast $ease-out, transform $dur-base $ease-spring; }
 .acct-enter-from, .acct-leave-to { opacity: 0; transform: translateY(8px) scale(0.98); }
+
+// Esqueleto de la lista mientras llega la boveda
+.sk {
+  display: block;
+  border-radius: 8px;
+  background: linear-gradient(100deg, rgba($alfii-cream, 0.06) 20%, rgba($alfii-cream, 0.16) 50%, rgba($alfii-cream, 0.06) 80%);
+  background-size: 220% 100%;
+  animation: shimmer 1.5s linear infinite;
+}
+.sk-item {
+  pointer-events: none;
+  animation: fadeIn $dur-base $ease-out both;
+  .sk-avatar { width: 40px; height: 40px; border-radius: 50%; flex: 0 0 40px; }
+  .item-body { @include stack(7px); flex: 1; }
+  .sk-line { height: 12px; &.thin { height: 9px; } }
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
 </style>
