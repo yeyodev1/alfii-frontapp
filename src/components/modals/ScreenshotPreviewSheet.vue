@@ -32,15 +32,14 @@ function addChip(c: string) {
   note.value = note.value ? `${note.value.trim()} ${c}` : c;
 }
 
-async function confirm() {
+function confirm() {
   if (busy.value) return;
   busy.value = true;
-  try {
-    await props.onConfirm?.(note.value.trim(), full.value);
-    emit('close');
-  } finally {
-    busy.value = false;
-  }
+  // No se espera la respuesta aqui: la hoja se cierra al instante y el
+  // usuario ve la captura entrar al hilo con el escaner. Antes se quedaba en
+  // "Enviando…" todo el analisis y tapaba justo lo que queria ver.
+  void props.onConfirm?.(note.value.trim(), full.value);
+  emit('close');
 }
 
 function sizeLabel(bytes: number) {

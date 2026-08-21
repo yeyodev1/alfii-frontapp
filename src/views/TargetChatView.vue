@@ -15,6 +15,7 @@ import { useModal } from '@/composables/useModal';
 import { classifyFile, MAX_AUDIO_BYTES, type DropKind } from '@/utils/chatFile';
 
 import { useToastStore } from '@/stores/toast';
+import { useSound } from '@/composables/useSound';
 
 const route = useRoute();
 // Reactivo: el sidebar navega entre /chat/:id reutilizando esta misma vista.
@@ -28,6 +29,7 @@ const sending = ref(false);
 const fileInput = ref<HTMLInputElement | null>(null);
 const chatContainer = ref<HTMLElement | null>(null);
 const toastStore = useToastStore();
+const { sound } = useSound();
 const showProfile = ref(false);
 const showHistory = ref(false);
 
@@ -151,6 +153,7 @@ async function loadExpediente() {
         kind: 'greeting',
         content: resGreet.greeting,
       });
+      sound('receive');
       scrollToBottom();
     }
   } catch (err: any) {
@@ -218,6 +221,7 @@ function openImport(initialFile?: File) {
         analysisId: { payload: res.analysis },
         content: res.analysis.lead,
       });
+      sound('analysis');
       pushClarifyingQuestion(res.analysis);
       if (res.target) target.value = res.target;
       scrollToBottom();
@@ -249,6 +253,7 @@ function pushClarifyingQuestion(analysis: any) {
   if (!q) return;
   window.setTimeout(() => {
     messages.value.push({ role: 'alfii', kind: 'text', content: q });
+    sound('receive');
     scrollToBottom();
   }, 600);
 }
@@ -261,6 +266,7 @@ async function analyzeScreenshot(file: File, note = '', full = false) {
   if (note) messages.value.push({ role: 'user', kind: 'text', content: note });
   const pending = { _id: `tmp-${Date.now()}`, role: 'user', kind: 'screenshot', imageUrl: localUrl, pending: true };
   messages.value.push(pending);
+  sound('upload');
   scrollToBottom();
   try {
     const formData = new FormData();
@@ -279,6 +285,7 @@ async function analyzeScreenshot(file: File, note = '', full = false) {
     if (res.mode === 'chat') {
       // Turno normal: Alfii contesta como en el chat, sin estudio.
       messages.value.push({ _id: res.replyMessageId, role: 'alfii', kind: 'text', content: res.reply });
+      sound('receive');
     } else {
       messages.value.push({
         role: 'alfii',
@@ -287,6 +294,7 @@ async function analyzeScreenshot(file: File, note = '', full = false) {
         content: res.analysis.lead,
         milestone: res.milestone || null,
       });
+      sound(res.milestone ? 'milestone' : 'analysis');
       pushClarifyingQuestion(res.analysis);
     }
 
@@ -329,6 +337,7 @@ async function transcribeAudio(file: File) {
   // trabajando, sin esperar en blanco.
   const placeholder = { _id: `tmp-${Date.now()}`, role: 'user', kind: 'audio', content: '', pending: true, fileName: file.name };
   messages.value.push(placeholder);
+  sound('upload');
   scrollToBottom();
   try {
     const formData = new FormData();
@@ -340,6 +349,7 @@ async function transcribeAudio(file: File) {
     const done = { ...res.message, fileName: file.name };
     if (idx >= 0) messages.value.splice(idx, 1, done);
     else messages.value.push(done);
+    sound('success');
     toastStore.show('Audio transcrito. Ya está en el hilo.', 'success');
   } catch (err: any) {
     const idx = messages.value.indexOf(placeholder);
@@ -428,6 +438,7 @@ async function sendTextMessage() {
   inputMessage.value = '';
 
   messages.value.push({ role: 'user', kind: 'text', content: text });
+  sound('send');
   scrollToBottom();
 
   try {
@@ -466,6 +477,7 @@ async function sendTextMessage() {
       switch (eventName) {
         case 'delta':
           if (typeof data === 'string') {
+            if (!alfiiMsg.content) sound('typing');
             alfiiMsg.content += data;
             scrollToBottom();
           }
@@ -483,6 +495,7 @@ async function sendTextMessage() {
           break;
         case 'done':
           if (data?.messageId) alfiiMsg._id = data.messageId;
+          sound('receive');
           break;
       }
     };

@@ -14,6 +14,8 @@
 import { computed } from 'vue';
 import BaseIcon from '@/components/shared/BaseIcon.vue';
 import { useToastStore } from '@/stores/toast';
+import { useSound } from '@/composables/useSound';
+const { sound } = useSound();
 
 const props = defineProps<{ content: string }>();
 const toastStore = useToastStore();
@@ -88,6 +90,7 @@ function inline(text: string): Array<{ b: boolean; t: string }> {
 async function copy(text: string) {
   try {
     await navigator.clipboard.writeText(text);
+    sound('copy');
     toastStore.show('Mensaje copiado. Pégalo tal cual.', 'success');
   } catch {
     toastStore.show('No pude copiar. Selecciónalo a mano.', 'error');

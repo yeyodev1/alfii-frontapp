@@ -9,11 +9,13 @@ import { useAuthStore } from '@/stores/auth';
 import { useModal } from '@/composables/useModal';
 import { useToastStore } from '@/stores/toast';
 import api from '@/services/http';
+import { useSound } from '@/composables/useSound';
 
 const router = useRouter();
 const authStore = useAuthStore();
 const { open } = useModal();
 const toastStore = useToastStore();
+const { sound, enabled: soundOn, setEnabled: setSound } = useSound();
 const completeness = ref({ score: 0, impact: '' });
 
 function openChangePassword() {
@@ -197,6 +199,28 @@ async function handlePurge() {
             <BaseIcon name="logout" size="sm" color="cream" />
             <span>Cerrar sesión</span>
           </button>
+        </div>
+      </section>
+
+      <!-- Sonido -->
+      <section class="settings-card">
+        <h3>Sonidos e interacción</h3>
+        <p class="card-desc">
+          Cada respuesta, envío, análisis y hito tiene su sonido (y vibración en móvil). Sin archivos: se sintetiza en tu dispositivo.
+        </p>
+        <label class="pref-row" :class="{ on: soundOn }">
+          <span class="pref-text">
+            <strong>Sonidos de Alfii</strong>
+            <small>Tic al enviar, acorde al recibir, fanfarria en los hitos.</small>
+          </span>
+          <input type="checkbox" :checked="soundOn" @change="setSound(($event.target as HTMLInputElement).checked)" />
+          <span class="switch"></span>
+        </label>
+        <div v-if="soundOn" class="sound-demo">
+          <button type="button" @click="sound('send')">Enviar</button>
+          <button type="button" @click="sound('receive')">Recibir</button>
+          <button type="button" @click="sound('analysis')">Análisis</button>
+          <button type="button" @click="sound('milestone')">Hito</button>
         </div>
       </section>
 
@@ -432,4 +456,6 @@ async function handlePurge() {
   &:focus { outline: none; border-color: $alfii-sage; }
   option { background-color: $alfii-navy; color: $alfii-cream; }
 }
+
+.sound-demo { @include row(8px, center); flex-wrap: wrap; button { padding: 7px 12px; border-radius: 999px; font-size: $fs-2xs; font-weight: $fw-semibold; color: rgba($alfii-cream, 0.8); background-color: rgba($alfii-cream, 0.06); border: 1px solid rgba($alfii-cream, 0.14); &:hover { background-color: rgba($alfii-cream, 0.12); color: $alfii-cream; } } }
 </style>

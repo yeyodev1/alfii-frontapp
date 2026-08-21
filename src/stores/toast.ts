@@ -1,3 +1,5 @@
+import { useSound } from '@/composables/useSound';
+const { sound } = useSound();
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 
@@ -11,6 +13,7 @@ export const useToastStore = defineStore('toast', () => {
   const toasts = ref<ToastMessage[]>([]);
 
   function show(message: string, type: 'success' | 'error' | 'info' = 'info', duration = 4000) {
+    if (type === 'error') sound('error');
     const id = Math.random().toString(36).substring(2, 9);
     toasts.value.push({ id, type, message });
 

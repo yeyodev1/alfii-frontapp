@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, markRaw, type Component } from 'vue';
+import { useSound } from '@/composables/useSound';
+const { sound } = useSound();
 
 export interface ModalEntry {
   id: string;
@@ -18,10 +20,12 @@ export const useModalStore = defineStore('modal', () => {
       stack.value.splice(idx, 1);
     }
     stack.value.push({ id, component: markRaw(component), props, dismissable });
+    sound('open');
     document.body.style.overflow = 'hidden';
   }
 
   function pop() {
+    if (stack.value.length) sound('close');
     stack.value.pop();
     if (stack.value.length === 0) {
       document.body.style.overflow = '';
