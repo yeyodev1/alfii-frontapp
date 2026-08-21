@@ -13,7 +13,7 @@ import BaseIcon from '@/components/shared/BaseIcon.vue';
 
 const props = defineProps<{
   file: File;
-  onConfirm?: (note: string) => Promise<unknown> | void;
+  onConfirm?: (note: string, full: boolean) => Promise<unknown> | void;
 }>();
 
 const emit = defineEmits<{ (e: 'close'): void }>();
@@ -21,6 +21,7 @@ const emit = defineEmits<{ (e: 'close'): void }>();
 const url = ref('');
 const note = ref('');
 const busy = ref(false);
+const full = ref(false);
 
 onMounted(() => { url.value = URL.createObjectURL(props.file); });
 onBeforeUnmount(() => { if (url.value) URL.revokeObjectURL(url.value); });
@@ -35,7 +36,7 @@ async function confirm() {
   if (busy.value) return;
   busy.value = true;
   try {
-    await props.onConfirm?.(note.value.trim());
+    await props.onConfirm?.(note.value.trim(), full.value);
     emit('close');
   } finally {
     busy.value = false;
@@ -69,10 +70,19 @@ function sizeLabel(bytes: number) {
         <button v-for="c in CHIPS" :key="c" type="button" @click="addChip(c)">{{ c }}</button>
       </div>
 
+      <label class="full-toggle" :class="{ on: full }">
+        <input v-model="full" type="checkbox" />
+        <span class="box"><BaseIcon v-if="full" name="check" size="xs" color="cream" /></span>
+        <span class="full-text">
+          <strong>Quiero el análisis completo</strong>
+          <small>Por defecto Alfii responde como en el chat; el estudio de 6 bloques lo hace solo cuando detecta un hito (cita, beso, se enfrió, conflicto…) o si lo marcas aquí.</small>
+        </span>
+      </label>
+
       <button type="button" class="btn-primary" :disabled="busy" @click="confirm">
         <BaseIcon v-if="busy" name="spinner" spin size="sm" color="cream" />
-        <BaseIcon v-else name="bolt" size="sm" color="cream" />
-        <span>{{ busy ? 'Enviando…' : 'Analizar esta captura' }}</span>
+        <BaseIcon v-else :name="full ? 'subtext' : 'forward'" size="sm" color="cream" />
+        <span>{{ busy ? 'Enviando…' : full ? 'Analizar a fondo' : 'Enviar a Alfii' }}</span>
       </button>
 
       <p class="privacy">
@@ -176,5 +186,18 @@ function sizeLabel(bytes: number) {
   @include row(8px, flex-start);
   font-size: $fs-2xs;
   color: rgba($alfii-cream, 0.55);
+}
+
+.full-toggle {
+  @include row(12px, flex-start);
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba($alfii-cream, 0.12);
+  cursor: pointer;
+  &.on { border-color: rgba($alfii-red, 0.6); background-color: rgba($alfii-red, 0.08); }
+  input { position: absolute; opacity: 0; pointer-events: none; }
+  .box { @include center; flex-shrink: 0; width: 20px; height: 20px; border-radius: 6px; border: 1.5px solid rgba($alfii-cream, 0.4); margin-top: 2px; }
+  &.on .box { background-color: $alfii-red; border-color: $alfii-red; }
+  .full-text { @include stack(2px); strong { font-size: $fs-xs; } small { font-size: 11px; line-height: $lh-relaxed; color: rgba($alfii-cream, 0.55); } }
 }
 </style>

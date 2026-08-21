@@ -236,7 +236,7 @@ async function handleFileSelected(event: Event) {
 function previewScreenshot(file: File) {
   open('screenshotPreview', ScreenshotPreviewSheet, {
     file,
-    onConfirm: (note: string) => analyzeScreenshot(file, note),
+    onConfirm: (note: string, full: boolean) => analyzeScreenshot(file, note, full),
   });
 }
 
@@ -253,7 +253,7 @@ function pushClarifyingQuestion(analysis: any) {
   }, 600);
 }
 
-async function analyzeScreenshot(file: File, note = '') {
+async function analyzeScreenshot(file: File, note = '', full = false) {
   sending.value = true;
   // La imagen entra al hilo al instante (object URL) con estado "analizando";
   // al volver el backend se reemplaza por la URL firmada.
@@ -266,6 +266,7 @@ async function analyzeScreenshot(file: File, note = '') {
     const formData = new FormData();
     formData.append('screenshot', file);
     if (note) formData.append('note', note);
+    if (full) formData.append('mode', 'full');
 
     const res: any = await api.post(`/targets/${targetId}/analyze`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
@@ -275,13 +276,19 @@ async function analyzeScreenshot(file: File, note = '') {
     const finalMsg = { role: 'user', kind: 'screenshot', imageUrl: res.imageUrl || localUrl, pending: false };
     if (idx >= 0) messages.value.splice(idx, 1, finalMsg);
 
-    messages.value.push({
-      role: 'alfii',
-      kind: 'analysis',
-      analysisId: { payload: res.analysis },
-      content: res.analysis.lead,
-    });
-    pushClarifyingQuestion(res.analysis);
+    if (res.mode === 'chat') {
+      // Turno normal: Alfii contesta como en el chat, sin estudio.
+      messages.value.push({ _id: res.replyMessageId, role: 'alfii', kind: 'text', content: res.reply });
+    } else {
+      messages.value.push({
+        role: 'alfii',
+        kind: 'analysis',
+        analysisId: { payload: res.analysis },
+        content: res.analysis.lead,
+        milestone: res.milestone || null,
+      });
+      pushClarifyingQuestion(res.analysis);
+    }
 
     if (res.target) target.value = res.target;
   } catch (err: any) {
@@ -689,6 +696,9 @@ async function sendTextMessage() {
 
         <!-- Analisis: entra plegado, el usuario lo abre si quiere el detalle -->
         <div v-else-if="msg.kind === 'analysis'" class="analysis-msg">
+          <span v-if="msg.milestone?.label" class="milestone-chip">
+            <BaseIcon name="bolt" size="xs" color="cream" /> Hito: {{ msg.milestone.label }}
+          </span>
           <AnalysisCard :analysis="msg.analysisId?.payload || msg.analysis" collapsible />
         </div>
 
@@ -1232,6 +1242,23 @@ $reading-width: 860px;
     color: rgba($alfii-cream, 0.7);
     &:hover { background-color: rgba($alfii-cream, 0.06); color: $alfii-cream; }
   }
+}
+
+
+.milestone-chip {
+  @include row(6px);
+  display: inline-flex;
+  margin-bottom: 8px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, $alfii-red, #ff3b5c);
+  color: $alfii-cream;
+  font-size: 11px;
+  font-weight: $fw-bold;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  box-shadow: 0 4px 14px rgba($alfii-red, 0.4);
+  animation: fadeInUp $dur-base $ease-out both;
 }
 
 // Burbuja de nota de voz transcrita (lado usuario)
