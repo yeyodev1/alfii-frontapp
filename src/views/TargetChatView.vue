@@ -41,12 +41,63 @@ async function refreshTarget() {
   }
 }
 
-function scrollToBottom() {
-  nextTick(() => {
-    if (chatContainer.value) {
-      chatContainer.value.scrollTop = chatContainer.value.scrollHeight;
+/**
+ * Al final SIEMPRE. Las imagenes y las tarjetas de analisis cambian de alto
+ * despues del primer render, asi que se insiste: al siguiente tick, y otra
+ * vez cuando el layout ya asento. `force` salta la proteccion de "el usuario
+ * esta leyendo arriba".
+ */
+function scrollToBottom(force = true) {
+  const el = chatContainer.value;
+  if (!el) return;
+  if (!force) {
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (distance > 220) return;
+  }
+  const go = () => { if (chatContainer.value) chatContainer.value.scrollTop = chatContainer.value.scrollHeight; };
+  nextTick(go);
+  window.setTimeout(go, 120);
+  window.setTimeout(go, 420);
+}
+
+// ---------------------------------------------------------------------------
+// Paginacion hacia arriba: el hilo abre con los ultimos PAGE mensajes y, al
+// acercarse al tope, trae los anteriores sin mover lo que el usuario ve.
+// ---------------------------------------------------------------------------
+const PAGE = 30;
+const hasMore = ref(false);
+const nextCursor = ref<string | null>(null);
+const loadingOlder = ref(false);
+
+async function loadOlder() {
+  const el = chatContainer.value;
+  if (!el || loadingOlder.value || !hasMore.value || !nextCursor.value) return;
+  loadingOlder.value = true;
+  const prevHeight = el.scrollHeight;
+  const prevTop = el.scrollTop;
+  try {
+    const res: any = await api.get(`/targets/${targetId}/messages?before=${encodeURIComponent(nextCursor.value)}&limit=${PAGE}`);
+    const older: any[] = (res.messages || []).map((m: any) => ({ ...m, older: true }));
+    hasMore.value = !!res.hasMore;
+    nextCursor.value = res.nextCursor || null;
+    if (older.length) {
+      messages.value.unshift(...older);
+      await nextTick();
+      // Se compensa el alto insertado para que la burbuja que miraba siga en
+      // el mismo sitio: nada de saltos.
+      el.scrollTop = prevTop + (el.scrollHeight - prevHeight);
     }
-  });
+  } catch (err: any) {
+    toastStore.show(err.message || 'No pude cargar mensajes anteriores.', 'error');
+  } finally {
+    loadingOlder.value = false;
+  }
+}
+
+function onThreadScroll() {
+  const el = chatContainer.value;
+  if (!el) return;
+  if (el.scrollTop < 140 && hasMore.value && !loadingOlder.value && !loadingExpediente.value) void loadOlder();
 }
 
 const loadingExpediente = ref(true);
@@ -68,6 +119,8 @@ async function loadExpediente() {
   targetId = routeId.value;
   target.value = null;
   messages.value = [];
+  hasMore.value = false;
+  nextCursor.value = null;
   showProfile.value = false;
   showHistory.value = false;
   loadingExpediente.value = true;
@@ -77,13 +130,17 @@ async function loadExpediente() {
     // vacia el doble de tiempo.
     const [resTarget, resMsgs]: any[] = await Promise.all([
       api.get(`/targets/${targetId}`),
-      api.get(`/targets/${targetId}/messages`),
+      api.get(`/targets/${targetId}/messages?limit=${PAGE}`),
     ]);
     target.value = resTarget.target;
     messages.value = resMsgs.messages || [];
+    hasMore.value = !!resMsgs.hasMore;
+    nextCursor.value = resMsgs.nextCursor || null;
     revealedAt.value = messages.value.length;
     loadingExpediente.value = false;
     scrollToBottom();
+    // Tras la entrada escalonada (≈0.9 s) el alto final ya es el real.
+    window.setTimeout(() => scrollToBottom(), 1000);
 
     // Saludo proactivo de reingreso: llega despues, como un mensaje nuevo.
     const resGreet: any = await api.get(`/targets/${targetId}/greeting`);
@@ -161,6 +218,7 @@ function openImport(initialFile?: File) {
         analysisId: { payload: res.analysis },
         content: res.analysis.lead,
       });
+      pushClarifyingQuestion(res.analysis);
       if (res.target) target.value = res.target;
       scrollToBottom();
     },
@@ -180,6 +238,19 @@ function previewScreenshot(file: File) {
     file,
     onConfirm: (note: string) => analyzeScreenshot(file, note),
   });
+}
+
+/**
+ * Si el analisis no pudo ubicar el tiempo (que dia, cuanto paso), Alfii lo
+ * pregunta como un mensaje mas; el backend ya lo persistio en el hilo.
+ */
+function pushClarifyingQuestion(analysis: any) {
+  const q = String(analysis?.clarifyingQuestion ?? '').trim();
+  if (!q) return;
+  window.setTimeout(() => {
+    messages.value.push({ role: 'alfii', kind: 'text', content: q });
+    scrollToBottom();
+  }, 600);
 }
 
 async function analyzeScreenshot(file: File, note = '') {
@@ -210,6 +281,7 @@ async function analyzeScreenshot(file: File, note = '') {
       analysisId: { payload: res.analysis },
       content: res.analysis.lead,
     });
+    pushClarifyingQuestion(res.analysis);
 
     if (res.target) target.value = res.target;
   } catch (err: any) {
@@ -574,8 +646,16 @@ async function sendTextMessage() {
     </div>
 
     <!-- Hilo de mensajes -->
-    <div ref="chatContainer" class="chat-thread">
+    <div ref="chatContainer" class="chat-thread" @scroll.passive="onThreadScroll">
       <div class="thread-inner">
+      <!-- Tope del hilo: cargando anteriores / principio del expediente -->
+      <div v-if="!loadingExpediente && messages.length" class="thread-top">
+        <span v-if="loadingOlder" class="top-loading"><BaseIcon name="spinner" spin size="xs" color="muted" /> Cargando mensajes anteriores…</span>
+        <button v-else-if="hasMore" type="button" class="top-more" @click="loadOlder">
+          <BaseIcon name="arrowUp" size="xs" color="muted" /> Ver mensajes anteriores
+        </button>
+        <span v-else class="top-start"><BaseIcon name="history" size="xs" color="muted" /> Inicio del expediente</span>
+      </div>
       <!-- Esqueleto del hilo: burbujas fantasma alternadas con shimmer -->
       <template v-if="loadingExpediente">
         <div v-for="n in 6" :key="'sk' + n" class="msg-row sk-row" :class="n % 3 === 0 ? 'user' : 'alfii'" aria-hidden="true">
@@ -588,9 +668,9 @@ async function sendTextMessage() {
       <div
         v-for="(msg, idx) in messages"
         :key="msg._id || idx"
-        class="msg-row enter"
-        :class="[msg.role, { system: msg.kind === 'stateChange' }]"
-        :style="{ animationDelay: enterDelay(idx) }"
+        class="msg-row"
+        :class="[msg.role, { system: msg.kind === 'stateChange', enter: !msg.older }]"
+        :style="{ animationDelay: msg.older ? '0ms' : enterDelay(idx) }"
       >
         <!-- Cambio de expediente: chip de sistema, no burbuja -->
         <span v-if="msg.kind === 'stateChange'" class="state-chip">
@@ -600,7 +680,7 @@ async function sendTextMessage() {
 
         <!-- Captura subida: queda en el hilo junto a su analisis -->
         <div v-else-if="(msg.kind === 'screenshot' || msg.kind === 'photo') && msg.imageUrl" class="screenshot-msg" :class="{ pending: msg.pending, photo: msg.kind === 'photo' }">
-          <img :src="msg.imageUrl" alt="Captura analizada" loading="lazy" />
+          <img :src="msg.imageUrl" alt="Captura analizada" loading="lazy" @load="scrollToBottom(false)" />
           <span v-if="msg.pending" class="scan">
             <i class="scan-line"></i>
             <span class="scan-label"><BaseIcon name="spinner" spin size="xs" color="cream" /> Alfii está leyendo la captura…</span>
@@ -1135,6 +1215,23 @@ $reading-width: 860px;
 @media (prefers-reduced-motion: reduce) {
   .msg-row.enter, .sk-row { animation: none; }
   .sk { animation: none; }
+}
+
+
+.thread-top {
+  @include row(0, center, center);
+  padding: 6px 0 10px;
+  font-size: $fs-2xs;
+  color: rgba($alfii-cream, 0.45);
+  .top-loading, .top-start { @include row(6px); }
+  .top-more {
+    @include row(6px);
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba($alfii-cream, 0.14);
+    color: rgba($alfii-cream, 0.7);
+    &:hover { background-color: rgba($alfii-cream, 0.06); color: $alfii-cream; }
+  }
 }
 
 // Burbuja de nota de voz transcrita (lado usuario)
