@@ -3,7 +3,7 @@ import BaseIcon from '@/components/shared/BaseIcon.vue';
 import ProfileCompletenessBadge from '@/components/shared/ProfileCompletenessBadge.vue';
 import ConfirmModal from '@/components/modals/ConfirmModal.vue';
 import ChangePasswordSheet from '@/components/modals/ChangePasswordSheet.vue';
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { useModal } from '@/composables/useModal';
@@ -71,6 +71,58 @@ async function toggleWaitlist() {
     toastStore.show(res.whatsappWaitlist ? 'Te avisamos en cuanto Alfii esté en WhatsApp.' : 'Quitado de la lista.', 'success');
   } catch (err: any) {
     toastStore.show(err.message || 'No pude guardar.', 'error');
+  } finally {
+    savingPref.value = null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Reloj: Alfii razona con la hora actual en esta zona.
+// ---------------------------------------------------------------------------
+const TIMEZONES: Array<{ value: string; label: string }> = [
+  { value: 'America/Guayaquil', label: 'Ecuador (Quito / Guayaquil)' },
+  { value: 'America/Bogota', label: 'Colombia (Bogotá)' },
+  { value: 'America/Lima', label: 'Perú (Lima)' },
+  { value: 'America/Mexico_City', label: 'México (CDMX)' },
+  { value: 'America/Santiago', label: 'Chile (Santiago)' },
+  { value: 'America/Argentina/Buenos_Aires', label: 'Argentina (Buenos Aires)' },
+  { value: 'America/Caracas', label: 'Venezuela (Caracas)' },
+  { value: 'America/Panama', label: 'Panamá' },
+  { value: 'America/Guatemala', label: 'Guatemala / Centroamérica' },
+  { value: 'America/Santo_Domingo', label: 'Rep. Dominicana' },
+  { value: 'America/New_York', label: 'EE. UU. Este (Nueva York / Miami)' },
+  { value: 'America/Chicago', label: 'EE. UU. Centro (Chicago / Houston)' },
+  { value: 'America/Los_Angeles', label: 'EE. UU. Pacífico (Los Ángeles)' },
+  { value: 'Europe/Madrid', label: 'España (Madrid)' },
+  { value: 'Europe/London', label: 'Reino Unido (Londres)' },
+];
+const timezone = computed(() => authStore.user?.timezone || 'America/Guayaquil');
+const browserTz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return ''; } })();
+const tzOptions = computed(() => {
+  const list = [...TIMEZONES];
+  if (browserTz && !list.some((t) => t.value === browserTz)) list.unshift({ value: browserTz, label: `${browserTz} (tu dispositivo)` });
+  if (!list.some((t) => t.value === timezone.value)) list.unshift({ value: timezone.value, label: timezone.value });
+  return list;
+});
+const nowText = ref('');
+let clockTimer: number | null = null;
+function tickClock() {
+  try {
+    nowText.value = new Intl.DateTimeFormat('es-EC', { timeZone: timezone.value, weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date());
+  } catch { nowText.value = ''; }
+}
+onMounted(() => { tickClock(); clockTimer = window.setInterval(tickClock, 15000); });
+onUnmounted(() => { if (clockTimer) window.clearInterval(clockTimer); });
+
+async function setTimezone(tz: string | null) {
+  savingPref.value = 'tz';
+  try {
+    const res: any = await api.patch('/me/timezone', { timezone: tz });
+    if (authStore.user) authStore.user.timezone = res.timezone;
+    tickClock();
+    toastStore.show(`Alfii ahora usa la hora de ${res.timezone}.`, 'success');
+  } catch (err: any) {
+    toastStore.show(err.message || 'No pude guardar la zona horaria.', 'error');
   } finally {
     savingPref.value = null;
   }
@@ -144,6 +196,28 @@ async function handlePurge() {
           <button class="action-btn" @click="handleLogout">
             <BaseIcon name="logout" size="sm" color="cream" />
             <span>Cerrar sesión</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- Reloj -->
+      <section class="settings-card">
+        <h3>Hora y zona horaria</h3>
+        <p class="card-desc">
+          Alfii razona con la hora actual: calcula cuánto hace que ella escribió, si "esta noche" ya pasó y
+          cuándo te conviene responder. Por defecto usa la hora de Ecuador.
+        </p>
+        <div class="tz-now">
+          <BaseIcon name="timing" size="sm" color="sage" />
+          <span>Para Alfii ahora es <strong>{{ nowText }}</strong></span>
+        </div>
+        <div class="tz-row">
+          <select class="tz-select" :value="timezone" :disabled="!!savingPref" @change="setTimezone(($event.target as HTMLSelectElement).value)">
+            <option v-for="t in tzOptions" :key="t.value" :value="t.value">{{ t.label }}</option>
+          </select>
+          <button v-if="browserTz && browserTz !== timezone" class="action-btn" :disabled="!!savingPref" @click="setTimezone(browserTz)">
+            <BaseIcon name="earthAmericas" size="sm" color="cream" />
+            <span>Usar la de mi dispositivo ({{ browserTz }})</span>
           </button>
         </div>
       </section>
@@ -343,5 +417,19 @@ async function handlePurge() {
   border-color: rgba(#25d366, 0.35);
   background: linear-gradient(150deg, rgba(#25d366, 0.1), transparent 60%);
   .wa-head { @include row(12px, center); .wa-icon { @include center; width: 44px; height: 44px; border-radius: 50%; background-color: rgba(#25d366, 0.35); flex-shrink: 0; } .soon { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: $fw-bold; color: #25d366; } h3 { margin-top: 2px; } }
+}
+
+.tz-now { @include row(8px, center); font-size: $fs-xs; color: rgba($alfii-cream, 0.75); strong { color: $alfii-cream; } }
+.tz-row { @include stack(10px); }
+.tz-select {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background-color: rgba($alfii-navy, 0.5);
+  border: 1px solid rgba($alfii-cream, 0.15);
+  color: $alfii-cream;
+  font-size: $fs-xs;
+  &:focus { outline: none; border-color: $alfii-sage; }
+  option { background-color: $alfii-navy; color: $alfii-cream; }
 }
 </style>

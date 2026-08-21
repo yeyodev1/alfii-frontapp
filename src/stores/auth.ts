@@ -14,6 +14,8 @@ export interface User {
   legalUpToDate: boolean;
   emailPrefs?: { reengagement: boolean; achievements: boolean };
   whatsappWaitlist?: boolean;
+  /** Zona horaria IANA resuelta por el backend (default America/Guayaquil). */
+  timezone?: string;
 }
 
 export const useAuthStore = defineStore('auth', () => {
