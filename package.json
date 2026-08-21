@@ -10,6 +10,7 @@
   "dependencies": {
     "axios": "^1.13.2",
     "cors": "^2.8.5",
+    "cuelume": "^0.2.2",
     "fflate": "^0.8.3",
     "gsap": "^3.15.0",
     "pinia": "^3.0.2",

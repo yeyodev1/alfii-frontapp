@@ -15,7 +15,7 @@ const router = useRouter();
 const authStore = useAuthStore();
 const { open } = useModal();
 const toastStore = useToastStore();
-const { sound, enabled: soundOn, setEnabled: setSound } = useSound();
+const { sound, enabled: soundOn, volume: soundVol, setEnabled: setSound, setVolume: setSoundVol } = useSound();
 const completeness = ref({ score: 0, impact: '' });
 
 function openChangePassword() {
@@ -206,7 +206,7 @@ async function handlePurge() {
       <section class="settings-card">
         <h3>Sonidos e interacción</h3>
         <p class="card-desc">
-          Cada respuesta, envío, análisis y hito tiene su sonido (y vibración en móvil). Sin archivos: se sintetiza en tu dispositivo.
+          Cada respuesta, envío, análisis y hito tiene su sonido (y vibración en móvil). Motor: cuelume.
         </p>
         <label class="pref-row" :class="{ on: soundOn }">
           <span class="pref-text">
@@ -216,12 +216,18 @@ async function handlePurge() {
           <input type="checkbox" :checked="soundOn" @change="setSound(($event.target as HTMLInputElement).checked)" />
           <span class="switch"></span>
         </label>
-        <div v-if="soundOn" class="sound-demo">
-          <button type="button" @click="sound('send')">Enviar</button>
-          <button type="button" @click="sound('receive')">Recibir</button>
-          <button type="button" @click="sound('analysis')">Análisis</button>
-          <button type="button" @click="sound('milestone')">Hito</button>
-        </div>
+        <template v-if="soundOn">
+          <label class="vol-row">
+            <span class="vol-label"><BaseIcon name="audio" size="xs" color="muted" /> Volumen · {{ Math.round(soundVol * 100) }}%</span>
+            <input type="range" min="0" max="1" step="0.05" :value="soundVol" @input="setSoundVol(Number(($event.target as HTMLInputElement).value))" @change="sound('receive')" />
+          </label>
+          <div class="sound-demo">
+            <button type="button" data-cuelume-press data-cuelume-release @click="sound('send')">Enviar</button>
+            <button type="button" data-cuelume-press data-cuelume-release @click="sound('receive')">Recibir</button>
+            <button type="button" data-cuelume-press data-cuelume-release @click="sound('analysis')">Análisis</button>
+            <button type="button" data-cuelume-press data-cuelume-release @click="sound('milestone')">Hito</button>
+          </div>
+        </template>
       </section>
 
       <!-- Reloj -->
@@ -458,4 +464,6 @@ async function handlePurge() {
 }
 
 .sound-demo { @include row(8px, center); flex-wrap: wrap; button { padding: 7px 12px; border-radius: 999px; font-size: $fs-2xs; font-weight: $fw-semibold; color: rgba($alfii-cream, 0.8); background-color: rgba($alfii-cream, 0.06); border: 1px solid rgba($alfii-cream, 0.14); &:hover { background-color: rgba($alfii-cream, 0.12); color: $alfii-cream; } } }
+
+.vol-row { @include stack(6px); .vol-label { @include row(6px); font-size: $fs-2xs; color: rgba($alfii-cream, 0.7); } input[type="range"] { width: 100%; accent-color: $alfii-red; } }
 </style>

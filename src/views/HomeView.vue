@@ -32,7 +32,8 @@ import { useModal } from '@/composables/useModal';
 import { useAuthStore } from '@/stores/auth';
 import { useToastStore } from '@/stores/toast';
 import { useGsapContext, gsap, ScrollTrigger } from '@/composables/useGsap';
-import { useFirstAnalysisStore, type FirstAnalysisResponse } from '@/stores/firstAnalysis';import api from '@/services/http';
+import { useFirstAnalysisStore, type FirstAnalysisResponse } from '@/stores/firstAnalysis';
+import api from '@/services/http';
 
 const router = useRouter();
 const { open } = useModal();
@@ -227,7 +228,7 @@ useGsapContext(() => {
             <BaseIcon name="key" size="xs" color="cream" />
             <span>Entrar</span>
           </button>
-          <button class="nav-cta" @click="startExperience">
+          <button class="nav-cta" data-cuelume-press data-cuelume-release @click="startExperience">
             <BaseIcon name="upload" size="xs" color="cream" />
             <span>Nueva partida</span>
           </button>

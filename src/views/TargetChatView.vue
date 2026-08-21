@@ -752,7 +752,7 @@ async function sendTextMessage() {
     <!-- Input bar -->
     <footer class="input-bar">
       <div class="input-inner">
-      <button class="upload-btn" @click="triggerUpload" :disabled="sending || loadingExpediente">
+      <button class="upload-btn" data-cuelume-press data-cuelume-release @click="triggerUpload" :disabled="sending || loadingExpediente">
         <BaseIcon name="camera" size="base" color="cream" />
       </button>
 
@@ -760,6 +760,8 @@ async function sendTextMessage() {
         class="upload-btn"
         title="Importar conversación completa"
         :disabled="sending"
+        data-cuelume-press
+        data-cuelume-release
         @click="openImport()"
       >
         <BaseIcon name="platform.whatsapp" size="base" color="cream" />
@@ -769,6 +771,8 @@ async function sendTextMessage() {
         class="upload-btn"
         title="Subir nota de voz (solo transcribe)"
         :disabled="sending || transcribing"
+        data-cuelume-press
+        data-cuelume-release
         @click="triggerAudio"
       >
         <BaseIcon :name="transcribing ? 'spinner' : 'mic'" :spin="transcribing" size="base" color="cream" />

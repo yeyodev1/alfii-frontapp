@@ -6,6 +6,7 @@ import UpdateBanner from '@/components/shared/UpdateBanner.vue';
 import { onMounted, computed, ref } from 'vue';
 import { useAuthStore } from '@/stores/auth';
 import { useRoute, useRouter } from 'vue-router';
+import { useSound } from '@/composables/useSound';
 
 const authStore = useAuthStore();
 const route = useRoute();
@@ -44,7 +45,10 @@ const showNav = computed(
  */
 const transitionName = ref('nav-forward');
 
+const { sound: uiSound } = useSound();
 router.afterEach((to, from) => {
+  // Llegada a otra pantalla (solo navegaciones client-side, no la primera carga).
+  if (from.name && to.path !== from.path) uiSound('arrival');
   const toDepth = Number(to.meta?.depth ?? 0);
   const fromDepth = Number(from.meta?.depth ?? 0);
   transitionName.value = toDepth < fromDepth ? 'nav-back' : 'nav-forward';
