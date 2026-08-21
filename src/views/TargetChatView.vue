@@ -531,6 +531,10 @@ async function sendTextMessage() {
       </button>
 
       <div class="header-actions">
+        <RouterLink class="history-btn us-btn" :to="`/chat/${targetId}/nosotros`" title="Nosotros: lectura del vínculo y fotos">
+          <BaseIcon name="handHoldingHeart" size="xs" color="cream" />
+          <span class="desktop-only">Nosotros</span>
+        </RouterLink>
         <button class="history-btn" type="button" :class="{ on: showHistory }" title="Historial y trayectoria" @click="showHistory = !showHistory; if (showHistory) showProfile = false">
           <BaseIcon name="meters" size="xs" :color="showHistory ? 'cream' : 'sage'" />
           <span class="desktop-only">Historial</span>
@@ -595,7 +599,7 @@ async function sendTextMessage() {
         </span>
 
         <!-- Captura subida: queda en el hilo junto a su analisis -->
-        <div v-else-if="msg.kind === 'screenshot' && msg.imageUrl" class="screenshot-msg" :class="{ pending: msg.pending }">
+        <div v-else-if="(msg.kind === 'screenshot' || msg.kind === 'photo') && msg.imageUrl" class="screenshot-msg" :class="{ pending: msg.pending, photo: msg.kind === 'photo' }">
           <img :src="msg.imageUrl" alt="Captura analizada" loading="lazy" />
           <span v-if="msg.pending" class="scan">
             <i class="scan-line"></i>
@@ -1009,6 +1013,7 @@ $reading-width: 860px;
 
 
 // Boton Historial en el header + panel
+.target-header .us-btn { background-color: rgba($alfii-red, 0.14); border-color: rgba($alfii-red, 0.4); &:hover { background-color: rgba($alfii-red, 0.3); } }
 .target-header .history-btn {
   @include row(6px);
   padding: 7px 11px;

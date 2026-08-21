@@ -59,7 +59,9 @@ withDefaults(
   min-height: 0;
   @include stack(0);
   width: 100%;
-  max-width: 600px;
+  // Toda vista ocupa la pantalla completa; cada una fija su propio ancho de
+  // lectura por dentro (antes el shell lo capaba a 600px).
+  max-width: 100%;
   margin: 0 auto;
   transition: max-width $dur-base $ease-out;
 }

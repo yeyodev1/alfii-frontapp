@@ -59,6 +59,12 @@ const routes: Array<RouteRecordRaw> = [
     meta: { title: 'Expediente — alfii', immersive: true, depth: 2 },
   },
   {
+    path: '/chat/:id/nosotros',
+    name: 'Us',
+    component: () => import('../views/UsView.vue'),
+    meta: { title: 'Nosotros — alfii', immersive: true, depth: 3 },
+  },
+  {
     path: '/chat/:id/ficha',
     name: 'HerCard',
     component: () => import('../views/HerCardView.vue'),

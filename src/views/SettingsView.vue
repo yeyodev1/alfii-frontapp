@@ -141,7 +141,7 @@ async function handlePurge() {
 .settings-view {
   @include stack(20px);
   padding: 24px clamp(16px, 4vw, 24px) 60px;
-  max-width: 600px;
+  max-width: 880px;
   margin: 0 auto;
   width: 100%;
 }
