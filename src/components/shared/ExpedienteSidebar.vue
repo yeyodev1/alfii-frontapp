@@ -4,17 +4,73 @@
  * expedientes sin volver a /vault. Solo se monta a partir de 1024px; en movil
  * el flujo sigue siendo Boveda -> expediente con el boton de volver.
  */
-import { computed, onMounted } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import BaseIcon from '@/components/shared/BaseIcon.vue';
 import { useTargetStore } from '@/stores/target';
-import { useUserStore } from '@/stores/user';
+import { useAuthStore } from '@/stores/auth';
+import { useModal } from '@/composables/useModal';
+import { useToastStore } from '@/stores/toast';
+import AuthSheet from '@/components/modals/AuthSheet.vue';
+import api from '@/services/http';
 
 const props = defineProps<{ activeId: string }>();
 
 const router = useRouter();
 const targetStore = useTargetStore();
-const userStore = useUserStore();
+const authStore = useAuthStore();
+const { open } = useModal();
+const toastStore = useToastStore();
+
+// ---------------------------------------------------------------------------
+// Cuenta (abajo a la izquierda): menu que sube desde el pie del sidebar.
+// ---------------------------------------------------------------------------
+const menuOpen = ref(false);
+const footRef = ref<HTMLElement | null>(null);
+const isLoggedIn = computed(() => !!authStore.user && !authStore.user.isAnonymous);
+const accountName = computed(() => {
+  const u = authStore.user;
+  if (!u || u.isAnonymous) return 'Invitado';
+  return u.preferredName || u.email?.split('@')[0] || 'Tu cuenta';
+});
+const accountInitial = computed(() => accountName.value.charAt(0).toUpperCase());
+const planLabel = computed(() => {
+  const u = authStore.user;
+  if (!u || u.isAnonymous) return 'Sin cuenta';
+  if (u.isVip) return 'VIP';
+  return u.plan === 'pro' ? 'Pro' : 'Gratis';
+});
+
+function onDocClick(e: MouseEvent) {
+  if (menuOpen.value && footRef.value && !footRef.value.contains(e.target as Node)) menuOpen.value = false;
+}
+function onKey(e: KeyboardEvent) {
+  if (e.key === 'Escape') menuOpen.value = false;
+}
+
+function go(path: string) {
+  menuOpen.value = false;
+  router.push(path);
+}
+
+async function openAuth() {
+  menuOpen.value = false;
+  let legalVersion = '';
+  try { legalVersion = ((await api.get('/legal/meta')) as any).version; } catch { /* solo bloquea registro */ }
+  open('auth', AuthSheet, {
+    legalVersion,
+    startMode: 'login',
+    onSuccess: () => toastStore.show('Sesión iniciada.', 'success'),
+  });
+}
+
+async function logout() {
+  menuOpen.value = false;
+  authStore.logout();
+  await authStore.initAnonymous();
+  toastStore.show('Sesión cerrada.', 'success');
+  router.push('/');
+}
 
 const STAGE_LABELS: Record<string, string> = {
   APERTURA: 'Apertura',
@@ -55,7 +111,13 @@ function riskClass(level?: string): string {
 }
 
 onMounted(() => {
+  document.addEventListener('click', onDocClick);
+  document.addEventListener('keydown', onKey);
   if (!targetStore.targets.length) void targetStore.fetchTargets();
+});
+onUnmounted(() => {
+  document.removeEventListener('click', onDocClick);
+  document.removeEventListener('keydown', onKey);
 });
 </script>
 
@@ -69,7 +131,7 @@ onMounted(() => {
           <small>{{ sorted.length }} {{ sorted.length === 1 ? 'expediente' : 'expedientes' }}</small>
         </span>
       </RouterLink>
-      <button class="new-btn" type="button" title="Nuevo expediente" @click="router.push('/')">
+      <button class="new-btn" type="button" title="Nuevo expediente" @click="router.push('/nueva')">
         <BaseIcon name="plus" size="sm" color="cream" />
       </button>
     </div>
@@ -99,14 +161,57 @@ onMounted(() => {
       <p v-if="!targetStore.loading && !sorted.length" class="empty">Aún no tienes expedientes.</p>
     </nav>
 
-    <div class="sb-foot">
-      <span class="user">
-        <span class="user-avatar">{{ (userStore.name || 'A').charAt(0).toUpperCase() }}</span>
-        <span class="user-name">{{ userStore.name || 'Tu cuenta' }}</span>
-      </span>
-      <RouterLink to="/settings" class="settings" title="Ajustes">
-        <BaseIcon name="settings" size="sm" color="muted" />
-      </RouterLink>
+    <div ref="footRef" class="sb-foot" :class="{ open: menuOpen }">
+      <!-- Menu de cuenta: sube desde el pie -->
+      <Transition name="acct">
+        <div v-if="menuOpen" class="acct-menu" role="menu">
+          <div class="acct-id">
+            <span class="acct-avatar big">{{ accountInitial }}</span>
+            <span class="acct-text">
+              <strong>{{ accountName }}</strong>
+              <small v-if="isLoggedIn">{{ authStore.user?.email }}</small>
+              <small v-else>Guarda tus expedientes con una cuenta</small>
+            </span>
+            <span class="plan" :class="planLabel.toLowerCase()">{{ planLabel }}</span>
+          </div>
+
+          <template v-if="isLoggedIn">
+            <button type="button" role="menuitem" @click="go('/settings')">
+              <BaseIcon name="settings" size="sm" color="muted" /><span>Ajustes de la cuenta</span>
+            </button>
+            <button type="button" role="menuitem" @click="go('/heroe')">
+              <BaseIcon name="meters" size="sm" color="muted" /><span>Mi progreso</span>
+            </button>
+            <button type="button" role="menuitem" @click="go('/vault')">
+              <BaseIcon name="vault" size="sm" color="muted" /><span>Bóveda</span>
+            </button>
+            <button type="button" role="menuitem" @click="go('/legal')">
+              <BaseIcon name="privacy" size="sm" color="muted" /><span>Privacidad y términos</span>
+            </button>
+            <div class="acct-sep"></div>
+            <button type="button" role="menuitem" class="danger" @click="logout">
+              <BaseIcon name="logout" size="sm" color="red" /><span>Cerrar sesión</span>
+            </button>
+          </template>
+          <template v-else>
+            <button type="button" role="menuitem" class="primary" @click="openAuth">
+              <BaseIcon name="key" size="sm" color="cream" /><span>Entrar o crear cuenta</span>
+            </button>
+            <button type="button" role="menuitem" @click="go('/legal')">
+              <BaseIcon name="privacy" size="sm" color="muted" /><span>Privacidad y términos</span>
+            </button>
+          </template>
+        </div>
+      </Transition>
+
+      <button type="button" class="acct-trigger" :aria-expanded="menuOpen" @click.stop="menuOpen = !menuOpen">
+        <span class="acct-avatar">{{ accountInitial }}</span>
+        <span class="acct-text">
+          <strong>{{ accountName }}</strong>
+          <small>{{ isLoggedIn ? planLabel : 'Toca para entrar' }}</small>
+        </span>
+        <BaseIcon :name="menuOpen ? 'arrowUp' : 'settings'" size="sm" color="muted" />
+      </button>
     </div>
   </aside>
 </template>
@@ -246,37 +351,95 @@ onMounted(() => {
 }
 
 .sb-foot {
-  @include row(12px, center, space-between);
-  padding: 14px 20px;
+  position: relative;
+  padding: 10px 12px 12px;
   border-top: 1px solid rgba($alfii-cream, 0.08);
 
-  .user {
+  .acct-trigger {
     @include row(10px, center);
-    min-width: 0;
-    .user-avatar {
-      @include center;
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      background-color: rgba($alfii-cream, 0.12);
-      font-weight: $fw-bold;
-      font-size: $fs-2xs;
-    }
-    .user-name {
-      font-size: $fs-xs;
-      font-weight: $fw-semibold;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-  }
-
-  .settings {
-    @include center;
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 12px;
+    text-align: left;
+    transition: background-color $dur-fast $ease-out;
     &:hover { background-color: rgba($alfii-cream, 0.06); }
   }
+  &.open .acct-trigger { background-color: rgba($alfii-cream, 0.08); }
+
+  .acct-avatar {
+    @include center;
+    flex-shrink: 0;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, $alfii-red, #ff3b5c);
+    color: $alfii-cream;
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: $fs-xs;
+    &.big { width: 42px; height: 42px; font-size: $fs-md; }
+  }
+
+  .acct-text {
+    @include stack(1px);
+    flex: 1;
+    min-width: 0;
+    strong { font-size: $fs-xs; font-weight: $fw-semibold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    small { font-size: 11px; color: rgba($alfii-cream, 0.5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  }
+
+  .acct-menu {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: calc(100% - 2px);
+    @include stack(2px);
+    padding: 8px;
+    border-radius: 16px;
+    background-color: rgba(#141b2d, 0.98);
+    border: 1px solid rgba($alfii-cream, 0.14);
+    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(18px);
+    z-index: 20;
+
+    .acct-id {
+      @include row(10px, center);
+      padding: 8px 8px 10px;
+      margin-bottom: 4px;
+      border-bottom: 1px solid rgba($alfii-cream, 0.08);
+    }
+
+    .plan {
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: $fw-bold;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      background-color: rgba($alfii-cream, 0.1);
+      color: rgba($alfii-cream, 0.8);
+      &.pro, &.vip { background-color: rgba(#c99a10, 0.3); color: #f2c14e; }
+    }
+
+    button {
+      @include row(10px, center);
+      width: 100%;
+      padding: 9px 10px;
+      border-radius: 10px;
+      font-size: $fs-xs;
+      font-weight: $fw-medium;
+      color: rgba($alfii-cream, 0.88);
+      text-align: left;
+      transition: background-color $dur-fast $ease-out;
+      &:hover { background-color: rgba($alfii-cream, 0.07); color: $alfii-cream; }
+      &.danger { color: #ff8095; }
+      &.primary { background-color: $alfii-red; color: $alfii-cream; font-weight: $fw-bold; justify-content: center; &:hover { background-color: #ff1a40; } }
+    }
+
+    .acct-sep { height: 1px; margin: 4px 6px; background-color: rgba($alfii-cream, 0.08); }
+  }
 }
+
+.acct-enter-active, .acct-leave-active { transition: opacity $dur-fast $ease-out, transform $dur-base $ease-spring; }
+.acct-enter-from, .acct-leave-to { opacity: 0; transform: translateY(8px) scale(0.98); }
 </style>
