@@ -198,6 +198,10 @@ onUnmounted(() => {
               <BaseIcon name="privacy" size="sm" color="muted" /><span>Privacidad y términos</span>
             </button>
             <div class="acct-sep"></div>
+            <button type="button" role="menuitem" class="wa-soon" @click="go('/settings')">
+              <BaseIcon name="platform.whatsapp" size="sm" color="cream" /><span>Pronto en WhatsApp · avísame</span>
+            </button>
+            <div class="acct-sep"></div>
             <button type="button" role="menuitem" class="danger" @click="logout">
               <BaseIcon name="logout" size="sm" color="red" /><span>Cerrar sesión</span>
             </button>
@@ -442,6 +446,7 @@ onUnmounted(() => {
       transition: background-color $dur-fast $ease-out;
       &:hover { background-color: rgba($alfii-cream, 0.07); color: $alfii-cream; }
       &.danger { color: #ff8095; }
+      &.wa-soon { background-color: rgba(#25d366, 0.12); color: $alfii-cream; }
       &.primary { background-color: $alfii-red; color: $alfii-cream; font-weight: $fw-bold; justify-content: center; &:hover { background-color: #ff1a40; } }
     }
 

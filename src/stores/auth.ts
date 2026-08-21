@@ -12,6 +12,8 @@ export interface User {
   /** Acceso pro regalado por el admin. */
   isVip?: boolean;
   legalUpToDate: boolean;
+  emailPrefs?: { reengagement: boolean; achievements: boolean };
+  whatsappWaitlist?: boolean;
 }
 
 export const useAuthStore = defineStore('auth', () => {

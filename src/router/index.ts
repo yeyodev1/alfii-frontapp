@@ -93,6 +93,12 @@ const routes: Array<RouteRecordRaw> = [
     meta: { title: 'Ajustes — alfii', depth: 1 },
   },
   {
+    path: '/correos',
+    name: 'EmailPrefs',
+    component: () => import('../views/EmailPrefsView.vue'),
+    meta: { title: 'Tus correos — alfii', immersive: true, depth: 1 },
+  },
+  {
     path: '/recuperar',
     name: 'ForgotPassword',
     component: () => import('../views/ForgotPasswordView.vue'),
