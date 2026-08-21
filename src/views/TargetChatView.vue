@@ -4,6 +4,8 @@ import AnalysisCard from '@/components/shared/AnalysisCard.vue';
 import RiskBadge from '@/components/shared/RiskBadge.vue';
 import HerProfileCard from '@/components/shared/HerProfileCard.vue';
 import AlfiiRichText from '@/components/shared/AlfiiRichText.vue';
+import HistoryGraph from '@/components/shared/HistoryGraph.vue';
+import ScreenshotPreviewSheet from '@/components/modals/ScreenshotPreviewSheet.vue';
 import ImportSheet from '@/components/modals/ImportSheet.vue';
 import ExpedienteSidebar from '@/components/shared/ExpedienteSidebar.vue';
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
@@ -27,6 +29,7 @@ const fileInput = ref<HTMLInputElement | null>(null);
 const chatContainer = ref<HTMLElement | null>(null);
 const toastStore = useToastStore();
 const showProfile = ref(false);
+const showHistory = ref(false);
 
 /** Recarga el expediente sin tocar el hilo: lo dispara el evento SSE `state`. */
 async function refreshTarget() {
@@ -143,25 +146,39 @@ function openImport(initialFile?: File) {
 async function handleFileSelected(event: Event) {
   const fileTarget = event.target as HTMLInputElement;
   const file = fileTarget.files?.[0];
-  if (file) await analyzeScreenshot(file);
+  if (file) previewScreenshot(file);
   fileTarget.value = '';
 }
 
-async function analyzeScreenshot(file: File) {
+/** La captura se ve ANTES de mandarse: confirmar imagen + nota opcional. */
+function previewScreenshot(file: File) {
+  open('screenshotPreview', ScreenshotPreviewSheet, {
+    file,
+    onConfirm: (note: string) => analyzeScreenshot(file, note),
+  });
+}
+
+async function analyzeScreenshot(file: File, note = '') {
   sending.value = true;
+  // La imagen entra al hilo al instante (object URL) con estado "analizando";
+  // al volver el backend se reemplaza por la URL firmada.
+  const localUrl = URL.createObjectURL(file);
+  if (note) messages.value.push({ role: 'user', kind: 'text', content: note });
+  const pending = { _id: `tmp-${Date.now()}`, role: 'user', kind: 'screenshot', imageUrl: localUrl, pending: true };
+  messages.value.push(pending);
+  scrollToBottom();
   try {
     const formData = new FormData();
     formData.append('screenshot', file);
+    if (note) formData.append('note', note);
 
     const res: any = await api.post(`/targets/${targetId}/analyze`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
 
-    // La captura entra al hilo antes del analisis, igual que la persiste el
-    // backend: el usuario ve primero lo que subio y despues la lectura.
-    if (res.imageUrl) {
-      messages.value.push({ role: 'user', kind: 'screenshot', imageUrl: res.imageUrl });
-    }
+    const idx = messages.value.indexOf(pending);
+    const finalMsg = { role: 'user', kind: 'screenshot', imageUrl: res.imageUrl || localUrl, pending: false };
+    if (idx >= 0) messages.value.splice(idx, 1, finalMsg);
 
     messages.value.push({
       role: 'alfii',
@@ -172,6 +189,8 @@ async function analyzeScreenshot(file: File) {
 
     if (res.target) target.value = res.target;
   } catch (err: any) {
+    const idx = messages.value.indexOf(pending);
+    if (idx >= 0) messages.value.splice(idx, 1);
     toastStore.show(err.message || 'Error al analizar la captura', 'error');
   } finally {
     sending.value = false;
@@ -280,7 +299,7 @@ async function onDrop(e: DragEvent) {
   if (!file) return;
   const kind = classifyFile(file);
   if (kind === 'image') {
-    await analyzeScreenshot(file);
+    previewScreenshot(file);
   } else if (kind === 'chat') {
     openImport(file);
   } else if (kind === 'audio') {
@@ -462,7 +481,7 @@ async function sendTextMessage() {
       </span>
 
       <!-- Tappable: abre/cierra la ficha de ella sin salir del chat -->
-      <button class="target-info" type="button" @click="showProfile = !showProfile">
+      <button class="target-info" type="button" @click="showProfile = !showProfile; if (showProfile) showHistory = false">
         <h3>{{ target.displayName }}</h3>
         <div class="sub-row">
           <span class="arq" v-if="target.archetype">{{ target.archetype.label }}</span>
@@ -477,6 +496,10 @@ async function sendTextMessage() {
       </button>
 
       <div class="header-actions">
+        <button class="history-btn" type="button" :class="{ on: showHistory }" title="Historial y trayectoria" @click="showHistory = !showHistory; if (showHistory) showProfile = false">
+          <BaseIcon name="meters" size="xs" :color="showHistory ? 'cream' : 'sage'" />
+          <span class="desktop-only">Historial</span>
+        </button>
         <RiskBadge :level="(target.risk?.level as any) || 'LIMPIO'" />
         <RouterLink class="profile-btn desktop-only" :to="`/chat/${targetId}/ficha`">
           <BaseIcon name="archetype" size="xs" color="sage" />
@@ -506,6 +529,11 @@ async function sendTextMessage() {
       </div>
     </div>
 
+    <!-- Historial: grafo de medidores + lectura de trayectoria -->
+    <div v-if="target && showHistory" class="history-panel">
+      <HistoryGraph :key="targetId" :target-id="targetId" :display-name="target.displayName" />
+    </div>
+
     <!-- Hilo de mensajes -->
     <div ref="chatContainer" class="chat-thread">
       <div class="thread-inner">
@@ -522,8 +550,12 @@ async function sendTextMessage() {
         </span>
 
         <!-- Captura subida: queda en el hilo junto a su analisis -->
-        <div v-else-if="msg.kind === 'screenshot' && msg.imageUrl" class="screenshot-msg">
+        <div v-else-if="msg.kind === 'screenshot' && msg.imageUrl" class="screenshot-msg" :class="{ pending: msg.pending }">
           <img :src="msg.imageUrl" alt="Captura analizada" loading="lazy" />
+          <span v-if="msg.pending" class="scan">
+            <i class="scan-line"></i>
+            <span class="scan-label"><BaseIcon name="spinner" spin size="xs" color="cream" /> Alfii está leyendo la captura…</span>
+          </span>
         </div>
 
         <!-- Analisis: entra plegado, el usuario lo abre si quiere el detalle -->
@@ -929,6 +961,73 @@ $reading-width: 860px;
   }
 }
 
+
+
+// Boton Historial en el header + panel
+.target-header .history-btn {
+  @include row(6px);
+  padding: 7px 11px;
+  border-radius: 999px;
+  font-size: $fs-2xs;
+  font-weight: $fw-semibold;
+  color: rgba($alfii-cream, 0.85);
+  background-color: rgba($alfii-sage, 0.12);
+  border: 1px solid rgba($alfii-sage, 0.35);
+  transition: background-color $dur-fast $ease-out;
+  &:hover, &.on { background-color: rgba($alfii-sage, 0.3); }
+}
+
+.history-panel {
+  flex: 0 0 auto;
+  max-height: 62dvh;
+  overflow-y: auto;
+  padding: 10px $chat-pad 14px;
+  background-color: rgba($alfii-plum, 0.35);
+  border-bottom: 1px solid rgba($alfii-cream, 0.08);
+  animation: fadeInUp $dur-base $ease-out both;
+
+  > * { max-width: $reading-width; margin: 0 auto; }
+}
+
+// Captura en estado "analizando": barrido de escaner sobre la imagen
+.screenshot-msg.pending {
+  position: relative;
+  img { filter: saturate(0.7) brightness(0.85); }
+  .scan {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    border-radius: inherit;
+    pointer-events: none;
+  }
+  .scan-line {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, $alfii-sage, transparent);
+    box-shadow: 0 0 14px $alfii-sage;
+    animation: scanMove 1.8s $ease-in-out infinite;
+  }
+  .scan-label {
+    position: absolute;
+    left: 10px;
+    bottom: 10px;
+    @include row(6px);
+    padding: 5px 10px;
+    border-radius: 999px;
+    background-color: rgba($alfii-navy, 0.85);
+    backdrop-filter: blur(8px);
+    font-size: 11px;
+    font-weight: $fw-semibold;
+    color: $alfii-cream;
+  }
+}
+@keyframes scanMove {
+  0% { top: 0; }
+  50% { top: calc(100% - 2px); }
+  100% { top: 0; }
+}
 
 // Burbuja de nota de voz transcrita (lado usuario)
 .audio-msg {
